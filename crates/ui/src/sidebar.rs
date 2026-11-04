@@ -11,7 +11,7 @@ use gpui::*;
 use std::collections::{BTreeMap, HashSet};
 use std::rc::Rc;
 
-const ROW_HEIGHT: f32 = 24.;
+const ROW_HEIGHT: f32 = 26.;
 
 /// 引用树拍平后的一行。树可能有上千个引用,所以用固定行高的虚拟列表,只渲染可见行。
 #[derive(Clone, Debug)]
@@ -24,6 +24,7 @@ pub(crate) enum SidebarRow {
     Group {
         key: String,
         prefix: String,
+        count: usize,
     },
     /// `index` 是在 `refs.refs` 中的下标。
     Ref {
@@ -78,6 +79,7 @@ pub(crate) fn flatten_refs(refs: &gitcore::Refs, collapsed: &HashSet<String>) ->
             rows.push(SidebarRow::Group {
                 key,
                 prefix: prefix.to_string(),
+                count: members.len(),
             });
             if open {
                 rows.extend(members.into_iter().map(|(index, rest)| SidebarRow::Ref {
@@ -168,8 +170,8 @@ impl RepoView {
                 SidebarRow::Section { title, count } => {
                     self.section(title, *count, cx).into_any_element()
                 }
-                SidebarRow::Group { key, prefix } => {
-                    self.group_row(key, prefix, cx).into_any_element()
+                SidebarRow::Group { key, prefix, count } => {
+                    self.group_row(key, prefix, *count, cx).into_any_element()
                 }
                 SidebarRow::Ref {
                     index,
@@ -200,17 +202,26 @@ impl RepoView {
     ) -> impl IntoElement + use<> {
         let collapsed = self.collapsed.contains(title);
         let theme = cx.theme().clone();
+        let icon = match title {
+            "本地分支" => Icon::from(gpui::assets::IconName::Laptop),
+            "远程" => Icon::from(IconName::Globe),
+            "标签" => Icon::from(gpui::assets::IconName::Tag),
+            _ => Icon::from(gpui::assets::IconName::Archive),
+        };
         h_flex()
             .id(title)
             .h(px(ROW_HEIGHT))
             .px_2()
-            .gap_1()
-            .items_end()
-            .pb_0p5()
+            .gap_1p5()
             .text_xs()
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(theme.muted_foreground)
             .cursor_pointer()
+            // 第一个分区之外用细线分开,折叠后也能看清分区边界
+            .when(title != "本地分支", |d| {
+                d.border_t_1().border_color(theme.border.opacity(0.6))
+            })
+            .hover(|s| s.text_color(theme.foreground))
             .child(
                 Icon::new(if collapsed {
                     IconName::ChevronRight
@@ -219,12 +230,9 @@ impl RepoView {
                 })
                 .xsmall(),
             )
-            .child(title)
-            .child(
-                div()
-                    .text_color(theme.muted_foreground.opacity(0.7))
-                    .child(count.to_string()),
-            )
+            .child(icon.xsmall())
+            .child(div().flex_1().child(title))
+            .child(count_chip(count, &theme))
             .on_click(cx.listener(move |this, _, _, cx| this.toggle_collapsed(title, cx)))
     }
 
@@ -232,6 +240,7 @@ impl RepoView {
         &self,
         key: &str,
         prefix: &str,
+        count: usize,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let collapsed = self.collapsed.contains(key);
@@ -239,12 +248,15 @@ impl RepoView {
         let k = key.to_string();
         h_flex()
             .id(SharedString::from(key.to_string()))
-            .pl(px(12.))
+            .pl(px(14.))
+            .pr_2()
             .h(px(ROW_HEIGHT))
             .gap_1()
             .text_sm()
+            .rounded_sm()
             .text_color(theme.muted_foreground)
             .cursor_pointer()
+            .hover(|s| s.bg(theme.list_hover))
             .child(
                 Icon::new(if collapsed {
                     IconName::ChevronRight
@@ -253,8 +265,21 @@ impl RepoView {
                 })
                 .xsmall(),
             )
-            .child(Icon::new(IconName::Folder).xsmall())
-            .child(prefix.to_string())
+            .child(
+                Icon::new(if collapsed {
+                    IconName::Folder
+                } else {
+                    IconName::FolderOpen
+                })
+                .xsmall(),
+            )
+            .child(div().flex_1().truncate().child(prefix.to_string()))
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground.opacity(0.7))
+                    .child(count.to_string()),
+            )
             .on_click(cx.listener(move |this, _, _, cx| this.toggle_collapsed(&k, cx)))
     }
 
@@ -275,6 +300,11 @@ impl RepoView {
             .text_sm()
             .rounded_sm()
             .hover(|s| s.bg(theme.list_hover))
+            .child(
+                Icon::from(gpui::assets::IconName::Archive)
+                    .xsmall()
+                    .text_color(theme.muted_foreground),
+            )
             .child(div().flex_1().truncate().child(s.message.clone()))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.repo.update(cx, |r, cx| r.select_commit(oid, cx))
@@ -328,10 +358,17 @@ impl RepoView {
             .gap_1()
             .text_sm()
             .rounded_sm()
-            .when(r.is_head, |d| d.font_weight(FontWeight::BOLD))
+            .when(r.is_head, |d| {
+                d.font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.primary)
+            })
             .when(selected, |d| d.bg(theme.list_active))
-            .hover(|s| s.bg(theme.list_hover))
-            .child(icon.xsmall().text_color(theme.muted_foreground))
+            .when(!selected, |d| d.hover(|s| s.bg(theme.list_hover)))
+            .child(icon.xsmall().text_color(if r.is_head {
+                theme.primary
+            } else {
+                theme.muted_foreground
+            }))
             .child(
                 div()
                     .id(SharedString::from(format!("ref:{}", r.name)))
@@ -340,7 +377,13 @@ impl RepoView {
                     .child(label)
                     .test_support(),
             )
-            .children(ab.map(|s| div().text_xs().text_color(theme.muted_foreground).child(s)))
+            .children(ab.map(|s| {
+                div()
+                    .text_xs()
+                    .font_weight(FontWeight::NORMAL)
+                    .text_color(theme.muted_foreground)
+                    .child(s)
+            }))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, e: &MouseDownEvent, window, cx| {
@@ -435,6 +478,20 @@ impl RepoView {
             RefAction::NewBranchFrom(rev) => self.prompt_new_branch(rev, window, cx),
         }
     }
+}
+
+/// 分区标题右侧的数量。
+fn count_chip(count: usize, theme: &gpui::component::Theme) -> impl IntoElement + use<> {
+    div()
+        .px_1p5()
+        .min_w(px(20.))
+        .flex()
+        .justify_center()
+        .rounded_full()
+        .bg(theme.muted)
+        .text_color(theme.muted_foreground)
+        .font_weight(FontWeight::NORMAL)
+        .child(count.to_string())
 }
 
 fn ref_menu(

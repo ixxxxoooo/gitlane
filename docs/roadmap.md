@@ -31,7 +31,7 @@
 | | 按信息 / 作者 / SHA 搜索,回车跳到下一个结果 | ✅ |
 | 提交详情与 diff | 作者、时间、SHA(点击复制)、完整信息、改动文件列表 | ✅ |
 | | 统一与并排视图、字符级差异、minimap(点击跳转)、大文件摘要 + 仍然显示 | ✅ |
-| | 语法高亮 | ⬜ 计划接入 gpui-component 的 `highlighter`(syntect) |
+| | 语法高亮 | ✅ syntect + bat 语法集(含 Vue / TypeScript),从完整文件解析;颜色亮色贴近 VS Code Light+、暗色对应 Dark+;配色是否合适需手工看(见 testing.md),选型见 [0005](decisions/0005-syntax-highlight.md) |
 | 暂存与提交 | 文件、hunk、单行三级暂存;取消暂存;丢弃(带确认,可撤销) | ✅ |
 | | 提交信息输入、amend(带出上次信息)、⌘↵ 提交 | ✅ |
 | | 提交签名 | 🚧 遵循用户的 `commit.gpgsign` 配置;界面上的强制签名开关未做(`CommitOptions::sign` 已支持) |

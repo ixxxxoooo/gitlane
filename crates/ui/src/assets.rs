@@ -3,7 +3,21 @@
 use gpui::{AssetSource, Result, SharedString};
 use std::borrow::Cow;
 
-gpui::assets::icon_assets!(ExtraIcons, [GitBranch, GitGraph, Tag]);
+gpui::assets::icon_assets!(
+    ExtraIcons,
+    [
+        Archive,
+        ArrowDownToLine,
+        ArrowUpFromLine,
+        Clock,
+        GitBranch,
+        GitCommitHorizontal,
+        GitGraph,
+        Hash,
+        Laptop,
+        Tag,
+    ]
+);
 
 pub struct AppAssets;
 

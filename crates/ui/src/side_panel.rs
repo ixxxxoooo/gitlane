@@ -10,9 +10,33 @@ use gpui::component::Disableable as _;
 use gpui::component::button::{Button, ButtonVariants};
 use gpui::component::checkbox::Checkbox;
 use gpui::component::input::Textarea;
-use gpui::component::{ActiveTheme, Sizable, h_flex, v_flex};
+use gpui::component::{ActiveTheme, Icon, IconName, Sizable, h_flex, v_flex};
 use gpui::prelude::*;
 use gpui::*;
+
+/// 拆成(目录, 文件名),列表里文件名在前、目录用浅色跟在后面。
+fn split_path(path: &str) -> (Option<String>, String) {
+    match path.rsplit_once('/') {
+        Some((d, n)) => (Some(d.to_string()), n.to_string()),
+        None => (None, path.to_string()),
+    }
+}
+
+/// 右栏各区域的标题栏。
+fn panel_header(icon: Icon, title: &'static str, theme: &gpui::component::Theme) -> Div {
+    h_flex()
+        .h(px(34.))
+        .flex_none()
+        .px_3()
+        .gap_2()
+        .text_xs()
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(theme.muted_foreground)
+        .border_b_1()
+        .border_color(theme.border)
+        .child(icon.xsmall())
+        .child(title)
+}
 
 fn kind_color(kind: ChangeKind, theme: &gpui::component::Theme) -> Hsla {
     match kind {
@@ -57,164 +81,296 @@ impl RepoView {
     fn render_details(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let repo = self.repo.read(cx);
         let theme = cx.theme().clone();
+        let dark = theme.is_dark();
+        let header = panel_header(
+            Icon::from(gpui::assets::IconName::GitCommitHorizontal),
+            "提交详情",
+            &theme,
+        );
         let Some(detail) = repo.detail.clone() else {
-            return div()
-                .p_3()
-                .text_color(theme.muted_foreground)
-                .child("加载中…")
+            return v_flex()
+                .size_full()
+                .child(header)
+                .child(
+                    div()
+                        .p_3()
+                        .text_sm()
+                        .text_color(theme.muted_foreground)
+                        .child("加载中…"),
+                )
                 .into_any_element();
         };
-        let oid = detail.info.id;
-        let open_path = repo.diff.as_ref().map(|d| d.path.clone());
-        let sha = oid.to_string();
+        let sha = detail.info.id.to_string();
+        let short = gitcore::short_id(detail.info.id);
+        let body = detail
+            .message
+            .trim()
+            .split_once('\n')
+            .map(|x| x.1)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let (additions, deletions) = detail
+            .files
+            .iter()
+            .fold((0, 0), |(a, d), f| (a + f.additions, d + f.deletions));
+        let initial = detail
+            .info
+            .author
+            .chars()
+            .next()
+            .map(|c| c.to_uppercase().to_string())
+            .unwrap_or_default();
+        let meta_row = |icon: Icon, text: String| {
+            h_flex()
+                .gap_2()
+                .text_xs()
+                .text_color(theme.muted_foreground)
+                .child(icon.xsmall())
+                .child(div().truncate().child(text))
+        };
 
         let meta = v_flex()
-            .gap_1()
+            .gap_3()
             .p_3()
-            .text_sm()
             .child(
-                div()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(detail.info.summary.clone()),
-            )
-            .child({
-                let body = detail
-                    .message
-                    .trim()
-                    .split_once('\n')
-                    .map(|x| x.1)
-                    .unwrap_or("")
-                    .trim()
-                    .to_string();
-                div().when(!body.is_empty(), |d| {
-                    d.text_color(theme.muted_foreground)
-                        .whitespace_normal()
-                        .child(body)
-                })
-            })
-            .child(
-                h_flex()
-                    .gap_1()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(format!("{} <{}>", detail.info.author, detail.info.email)),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(format!(
-                        "作者时间 {}",
-                        format::datetime(detail.info.time, detail.info.tz_offset)
-                    )),
-            )
-            .when(detail.committer != detail.info.author, |d| {
-                d.child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .child(format!(
-                            "提交者 {} · {}",
-                            detail.committer,
-                            format::datetime(detail.commit_time, 0)
-                        )),
-                )
-            })
-            .child(
-                h_flex()
-                    .id("sha")
-                    .gap_1()
-                    .text_xs()
-                    .font_family("Menlo")
-                    .text_color(theme.muted_foreground)
-                    .cursor_pointer()
-                    .child(sha.clone())
-                    .tooltip(|window, cx| {
-                        gpui::component::tooltip::Tooltip::new("点击复制").build(window, cx)
-                    })
-                    .on_click(move |_, window, cx| {
-                        cx.write_to_clipboard(ClipboardItem::new_string(sha.clone()));
-                        use gpui::component::WindowExt as _;
-                        window.push_notification(
-                            gpui::component::notification::Notification::info("已复制 SHA"),
-                            cx,
-                        );
+                v_flex()
+                    .gap_1p5()
+                    .child(
+                        div()
+                            .text_base()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .whitespace_normal()
+                            .child(detail.info.summary.clone()),
+                    )
+                    .when(!body.is_empty(), |d| {
+                        d.child(
+                            div()
+                                .text_sm()
+                                .text_color(theme.muted_foreground)
+                                .whitespace_normal()
+                                .child(body),
+                        )
                     }),
             )
-            .when(detail.info.parents.len() > 1, |d| {
-                d.child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .child(format!(
-                            "合并提交 · 父提交 {}",
-                            detail
-                                .info
-                                .parents
-                                .iter()
-                                .map(|p| gitcore::short_id(*p))
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                        )),
-                )
-            });
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .size(px(28.))
+                            .flex_none()
+                            .rounded_full()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .bg(crate::colors::avatar_color(&detail.info.author, dark))
+                            .text_color(gpui::white())
+                            .text_xs()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(initial),
+                    )
+                    .child(
+                        v_flex()
+                            .min_w_0()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .truncate()
+                                    .child(detail.info.author.clone()),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground)
+                                    .truncate()
+                                    .child(detail.info.email.clone()),
+                            ),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .gap_1p5()
+                    .child(meta_row(
+                        Icon::from(gpui::assets::IconName::Clock),
+                        format::datetime(detail.info.time, detail.info.tz_offset),
+                    ))
+                    .when(detail.committer != detail.info.author, |d| {
+                        d.child(meta_row(
+                            Icon::new(IconName::User),
+                            format!(
+                                "提交者 {} · {}",
+                                detail.committer,
+                                format::datetime(detail.commit_time, 0)
+                            ),
+                        ))
+                    })
+                    .child(
+                        meta_row(Icon::from(gpui::assets::IconName::Hash), short)
+                            .id("sha")
+                            .font_family("Menlo")
+                            .cursor_pointer()
+                            .hover(|s| s.text_color(theme.foreground))
+                            .tooltip(|window, cx| {
+                                gpui::component::tooltip::Tooltip::new("点击复制完整 SHA")
+                                    .build(window, cx)
+                            })
+                            .on_click(move |_, window, cx| {
+                                cx.write_to_clipboard(ClipboardItem::new_string(sha.clone()));
+                                use gpui::component::WindowExt as _;
+                                window.push_notification(
+                                    gpui::component::notification::Notification::info("已复制 SHA"),
+                                    cx,
+                                );
+                            }),
+                    )
+                    .when(detail.info.parents.len() > 1, |d| {
+                        d.child(meta_row(
+                            Icon::from(gpui::assets::IconName::GitBranch),
+                            format!(
+                                "合并提交 · 父提交 {}",
+                                detail
+                                    .info
+                                    .parents
+                                    .iter()
+                                    .map(|p| gitcore::short_id(*p))
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            ),
+                        ))
+                    }),
+            );
 
-        let files = detail.files.iter().map(|f| {
-            let path = f.path.clone();
-            let active = open_path.as_deref() == Some(f.path.as_str());
-            h_flex()
-                .id(SharedString::from(format!("cf-{}", f.path)))
-                .px_3()
-                .h(px(24.))
-                .gap_2()
-                .text_sm()
-                .cursor_pointer()
-                .when(active, |d| d.bg(theme.list_active))
-                .hover(|s| s.bg(theme.list_hover))
-                .child(
-                    div()
-                        .w(px(12.))
-                        .text_color(kind_color(f.kind, &theme))
-                        .child(f.kind.letter()),
-                )
-                .child(div().flex_1().truncate().child(match &f.old_path {
-                    Some(old) => format!("{old} → {}", f.path),
-                    None => f.path.clone(),
-                }))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.green)
-                        .child(format!("+{}", f.additions)),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.red)
-                        .child(format!("−{}", f.deletions)),
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    let path = path.clone();
-                    this.repo
-                        .update(cx, |r, cx| r.open_diff(DiffTarget::Commit(oid), path, cx))
-                }))
-        });
-
-        div()
-            .id("details")
-            .size_full()
-            .overflow_y_scroll()
-            .child(meta)
+        let files_header = h_flex()
+            .h(px(32.))
+            .px_3()
+            .gap_2()
+            .text_xs()
+            .border_t_1()
+            .border_color(theme.border)
             .child(
                 div()
-                    .px_3()
-                    .py_1()
-                    .text_xs()
+                    .flex_1()
+                    .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.muted_foreground)
                     .child(format!("{} 个文件改动", detail.files.len())),
             )
-            .children(files)
+            .child(div().text_color(theme.green).child(format!("+{additions}")))
+            .child(div().text_color(theme.red).child(format!("−{deletions}")));
+
+        let n = detail.files.len();
+        v_flex()
+            .size_full()
+            .child(header)
+            .child(
+                div()
+                    .id("details")
+                    .flex_none()
+                    .max_h(px(320.))
+                    .overflow_y_scroll()
+                    .child(meta),
+            )
+            .child(files_header)
+            .child(
+                uniform_list(
+                    "commit-files",
+                    n,
+                    cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                        this.render_commit_files(range, cx)
+                    }),
+                )
+                .flex_1()
+                .min_h_0(),
+            )
             .into_any_element()
+    }
+
+    /// 提交改动文件列表的可见行。一个提交可能改上千个文件,所以用虚拟列表。
+    fn render_commit_files(
+        &mut self,
+        range: std::ops::Range<usize>,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        let repo = self.repo.read(cx);
+        let Some(detail) = repo.detail.clone() else {
+            return Vec::new();
+        };
+        let theme = cx.theme().clone();
+        let oid = detail.info.id;
+        let open_path = repo.diff.as_ref().map(|d| d.path.clone());
+        detail.files[range.start.min(detail.files.len())..range.end.min(detail.files.len())]
+            .iter()
+            .map(|f| {
+                let path = f.path.clone();
+                let active = open_path.as_deref() == Some(f.path.as_str());
+                let (dir, name) = split_path(&f.path);
+                let secondary = match &f.old_path {
+                    Some(old) => Some(format!("← {old}")),
+                    None => dir,
+                };
+                h_flex()
+                    .id(SharedString::from(format!("cf-{}", f.path)))
+                    .px_3()
+                    .h(px(26.))
+                    .gap_2()
+                    .text_sm()
+                    .cursor_pointer()
+                    .when(active, |d| d.bg(theme.list_active))
+                    .when(!active, |d| d.hover(|s| s.bg(theme.list_hover)))
+                    .child(
+                        Icon::new(IconName::File)
+                            .xsmall()
+                            .text_color(theme.muted_foreground),
+                    )
+                    .child(
+                        h_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .gap_1p5()
+                            .child(div().flex_none().child(name))
+                            .children(secondary.map(|d| {
+                                div()
+                                    .truncate()
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground)
+                                    .child(d)
+                            })),
+                    )
+                    .child(
+                        h_flex()
+                            .flex_none()
+                            .gap_1()
+                            .text_xs()
+                            .child(
+                                div()
+                                    .text_color(theme.green)
+                                    .child(format!("+{}", f.additions)),
+                            )
+                            .child(
+                                div()
+                                    .text_color(theme.red)
+                                    .child(format!("−{}", f.deletions)),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .w(px(12.))
+                            .flex_none()
+                            .text_xs()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(kind_color(f.kind, &theme))
+                            .child(f.kind.letter()),
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        let path = path.clone();
+                        this.repo
+                            .update(cx, |r, cx| r.open_diff(DiffTarget::Commit(oid), path, cx))
+                    }))
+                    .into_any_element()
+            })
+            .collect()
     }
 
     fn render_staging(
@@ -250,10 +406,7 @@ impl RepoView {
             let active = open
                 .as_ref()
                 .is_some_and(|(t, p)| *t == target && *p == e.path);
-            let (dir, name) = match e.path.rsplit_once('/') {
-                Some((d, n)) => (Some(d.to_string()), n.to_string()),
-                None => (None, e.path.clone()),
-            };
+            let (dir, name) = split_path(&e.path);
             let p_open = path.clone();
             let p_action = path.clone();
             let p_discard = path.clone();

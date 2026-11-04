@@ -495,66 +495,35 @@ impl RepoView {
         );
         let head = repo.head_label();
         let theme = cx.theme().clone();
+        let sep = || div().w(px(1.)).h(px(18.)).mx_1().bg(theme.border);
+        let git_icon = |name: gpui::assets::IconName| Icon::from(name);
         h_flex()
-            .h(px(40.))
-            .px_2()
+            .h(px(44.))
+            .px_3()
             .gap_1()
             .border_b_1()
             .border_color(theme.border)
             .child(
-                Button::new("branch")
-                    .small()
-                    .ghost()
-                    .icon(Icon::from(gpui::assets::IconName::GitBranch))
-                    .label(head)
-                    .tooltip("新建分支(⌘⇧B)")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.on_new_branch(&NewBranch, window, cx)
-                    })),
+                h_flex()
+                    .id("head")
+                    .px_2()
+                    .gap_1p5()
+                    .max_w(px(260.))
+                    .text_sm()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(
+                        git_icon(gpui::assets::IconName::GitBranch)
+                            .small()
+                            .text_color(theme.muted_foreground),
+                    )
+                    .child(div().truncate().child(head)),
             )
-            .child(
-                Button::new("fetch")
-                    .small()
-                    .ghost()
-                    .label("Fetch")
-                    .disabled(busy)
-                    .on_click(cx.listener(|this, _, _, cx| this.run(Command::Fetch, cx))),
-            )
-            .child(
-                Button::new("pull")
-                    .small()
-                    .ghost()
-                    .icon(IconName::ArrowDown)
-                    .label("Pull")
-                    .disabled(busy)
-                    .on_click(cx.listener(|this, _, _, cx| this.run(Command::Pull, cx))),
-            )
-            .child(
-                Button::new("push")
-                    .small()
-                    .ghost()
-                    .icon(IconName::ArrowUp)
-                    .label("Push")
-                    .disabled(busy)
-                    .on_click(
-                        cx.listener(|this, _, _, cx| this.run(Command::Push { force: false }, cx)),
-                    ),
-            )
-            .child(
-                Button::new("stash")
-                    .small()
-                    .ghost()
-                    .label("Stash")
-                    .disabled(busy)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.run(Command::StashPush { message: None }, cx)
-                    })),
-            )
+            .child(sep())
             .child(
                 Button::new("undo")
                     .small()
                     .ghost()
-                    .icon(IconName::Undo)
+                    .icon(IconName::Undo2)
                     .tooltip(
                         undo_label
                             .clone()
@@ -569,7 +538,7 @@ impl RepoView {
                 Button::new("redo")
                     .small()
                     .ghost()
-                    .icon(IconName::Redo)
+                    .icon(IconName::Redo2)
                     .tooltip(
                         redo_label
                             .clone()
@@ -580,10 +549,63 @@ impl RepoView {
                         cx.listener(|this, _, _, cx| this.repo.update(cx, |r, cx| r.redo(cx))),
                     ),
             )
+            .child(sep())
+            .child(
+                Button::new("fetch")
+                    .small()
+                    .ghost()
+                    .icon(IconName::RefreshCw)
+                    .label("Fetch")
+                    .disabled(busy)
+                    .on_click(cx.listener(|this, _, _, cx| this.run(Command::Fetch, cx))),
+            )
+            .child(
+                Button::new("pull")
+                    .small()
+                    .ghost()
+                    .icon(git_icon(gpui::assets::IconName::ArrowDownToLine))
+                    .label("Pull")
+                    .disabled(busy)
+                    .on_click(cx.listener(|this, _, _, cx| this.run(Command::Pull, cx))),
+            )
+            .child(
+                Button::new("push")
+                    .small()
+                    .ghost()
+                    .icon(git_icon(gpui::assets::IconName::ArrowUpFromLine))
+                    .label("Push")
+                    .disabled(busy)
+                    .on_click(
+                        cx.listener(|this, _, _, cx| this.run(Command::Push { force: false }, cx)),
+                    ),
+            )
+            .child(sep())
+            .child(
+                Button::new("branch")
+                    .small()
+                    .ghost()
+                    .icon(git_icon(gpui::assets::IconName::GitBranch))
+                    .label("Branch")
+                    .tooltip("新建分支(⌘⇧B)")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.on_new_branch(&NewBranch, window, cx)
+                    })),
+            )
+            .child(
+                Button::new("stash")
+                    .small()
+                    .ghost()
+                    .icon(git_icon(gpui::assets::IconName::Archive))
+                    .label("Stash")
+                    .disabled(busy)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.run(Command::StashPush { message: None }, cx)
+                    })),
+            )
             .child(div().flex_1())
             .child(
                 div()
-                    .w(px(280.))
+                    .w(px(260.))
                     .child(Input::new(&self.search).small().cleanable(true)),
             )
             .child(

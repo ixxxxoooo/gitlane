@@ -20,7 +20,8 @@
 | 模块 | 内容 |
 |---|---|
 | `repo.rs` | **读路径**(git2):`history`(拓扑+时间排序,附父提交行号)、`refs`(分支/远程/标签/stash,领先落后)、`status`、`commit_detail` |
-| `diff.rs` | 单文件 diff(提交 / 已暂存 / 未暂存)、大文件保护(`LARGE_DIFF_LINES`)、删除块与新增块配对、字符级差异(`similar`) |
+| `diff.rs` | 单文件 diff(提交 / 已暂存 / 未暂存)、大文件保护(`LARGE_DIFF_LINES`)、删除块与新增块配对、字符级差异(`similar`)、读取两侧完整文件(`side_texts`,供高亮) |
+| `highlight.rs` | diff 语法高亮(syntect):从文件开头解析到最后一个改动行,只输出 `keyword` / `string` 这类高亮名,颜色由 ui 的 `colors.rs` 决定;文件太大或内容对不上时按 hunk 解析 |
 | `patch.rs` | 从 hunk 中挑选部分行生成补丁,支持暂存 / 取消暂存 / 丢弃三个方向 |
 | `config.rs` | 全局 git 配置(`~/.gitconfig`)的读写:身份、pull 方式、提交签名、默认分支名;读写都走系统 `git config`,测试用 `--file` 指向临时文件 |
 | `cli.rs` | **写路径**:调用系统 `git`,`GIT_TERMINAL_PROMPT=0`、`GIT_EDITOR=true`,支持 stdin 与取消(结束子进程) |
@@ -48,6 +49,8 @@
   - 命令队列:同一仓库的命令串行执行,失败后清空队列,避免连锁错误;
   - 全量加载与 status 加载各自单飞:进行中再请求只记“待刷新”,结束后补跑一次;
   - 代数计数(`detail_gen` / `diff_gen`):过期的详情与 diff 结果直接丢弃;
+  - diff 分两步加载:先算 diff,再在另一个后台任务里算语法高亮(大文件要几百毫秒)。首次打开先显示无高亮的 diff;
+    刷新(文件被改动)时保留旧内容,等高亮算完一起替换,避免闪烁;
   - 文件监听:`notify` 线程 → `futures` 通道 → 前台任务,防抖 300 ms 后刷新;只有 HEAD / refs / 进行中操作的变化才全量重载,
     `.git/index` 等只刷新 status(编辑器后台 `git status` 会频繁刷新 index);命令执行期间忽略自身写入引起的事件;
   - 通过 `RepoEvent` 通知视图显示提示、清空提交框。
@@ -64,7 +67,7 @@
 | `repo_view.rs` | 单仓库视图骨架:工具栏、进行中操作横幅、状态栏、仓库级动作处理 |
 | `sidebar.rs` | 引用树(按前缀分组)、右键菜单 |
 | `graph_view.rs` + `graph_canvas.rs` | 提交图:`uniform_list` 虚拟滚动,每行一个 canvas 画线段与节点 |
-| `diff_view.rs` | 统一 / 并排 diff、字符级高亮、minimap、hunk 与行选择 |
+| `diff_view.rs` | 统一 / 并排 diff、语法高亮与字符级差异合成(`merge_highlights`)、minimap、hunk 与行选择 |
 | `side_panel.rs` | 提交详情、暂存区、提交框 |
 | `dialogs.rs` / `palette.rs` | 确认与输入对话框、命令面板 |
 | `settings_view.rs` | 设置窗口(独立窗口,用 gpui-component 的 `setting::Settings`);只调用 `Workspace` 的方法,不直接调 git |
