@@ -243,6 +243,7 @@ impl RepoView {
             _ => Icon::from(gpui::assets::IconName::Archive),
         };
         h_flex()
+            .w_full()
             .id(title)
             .h(px(ROW_HEIGHT))
             .px_2()
@@ -286,6 +287,7 @@ impl RepoView {
         let theme = cx.theme().clone();
         let k = key.to_string();
         h_flex()
+            .w_full()
             .id(SharedString::from(key.to_string()))
             .pl(px(14.))
             .pr_2()
@@ -331,6 +333,7 @@ impl RepoView {
         let index = s.index;
         let oid = s.id;
         h_flex()
+            .w_full()
             .id(SharedString::from(format!("stash-{index}")))
             .pl(px(20.))
             .pr_2()
@@ -378,6 +381,7 @@ impl RepoView {
         let ab = r.ahead_behind.filter(|(a, b)| *a > 0 || *b > 0);
         let name_for_menu = short.clone();
         h_flex()
+            .w_full()
             .id(SharedString::from(r.name.clone()))
             // 左侧 2px 竖条只在当前分支上着色,其余透明,保证各行内容对齐
             .border_l_2()
@@ -393,10 +397,13 @@ impl RepoView {
             .text_sm()
             .when(r.is_head, |d| {
                 d.font_weight(FontWeight::MEDIUM)
-                    .bg(theme.primary.opacity(0.1))
+                    .bg(theme.primary.opacity(0.14))
             })
-            .when(selected, |d| d.bg(theme.list_active))
-            .when(!selected, |d| d.hover(|s| s.bg(theme.list_hover)))
+            // 当前分支的浅蓝底优先于选中底色,和参考图一样始终醒目
+            .when(selected && !r.is_head, |d| d.bg(theme.list_active))
+            .when(!selected && !r.is_head, |d| {
+                d.hover(|s| s.bg(theme.list_hover))
+            })
             .child(icon.xsmall().text_color(if r.is_head {
                 theme.primary
             } else {
