@@ -10,7 +10,7 @@ use app::{ThemePreference, Workspace};
 use gpui::base::Root;
 use gpui::component::button::{Button, ButtonVariants};
 use gpui::component::{
-    ActiveTheme, IconName, Sizable, Theme, ThemeMode, WindowExt, h_flex, v_flex,
+    ActiveTheme, IconName, Sizable, Theme, ThemeMode, TitleBar, WindowExt, h_flex, v_flex,
 };
 use gpui::prelude::*;
 use gpui::*;
@@ -396,12 +396,8 @@ impl GitlaneWindow {
                     }
                 }))
         });
-        h_flex()
-            .h(px(34.))
-            .flex_none()
-            .bg(theme.tab_bar)
-            .border_b_1()
-            .border_color(theme.border)
+        // 标签栏就是窗口顶栏:红绿灯在左,设置按钮在右,空白处可拖动窗口
+        TitleBar::new()
             .children(tabs)
             .child(
                 Button::new("open-repo")

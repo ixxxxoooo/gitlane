@@ -118,10 +118,9 @@ fn main() {
             let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("Gitlane".into()),
-                    ..Default::default()
-                }),
+                // 标签栏画在顶栏里,系统标题栏透明、红绿灯保留;拖动与双击由 TitleBar 自己处理
+                titlebar: Some(gpui::component::TitleBar::title_bar_options()),
+                app_owns_titlebar_drag: true,
                 window_min_size: Some(size(px(960.), px(600.))),
                 ..Default::default()
             };
