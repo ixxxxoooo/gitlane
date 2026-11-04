@@ -5,11 +5,12 @@ use crate::repo_view::RepoView;
 use app::{Command, Selection};
 use gitcore::diff::DiffTarget;
 use gitcore::{ChangeKind, StatusEntry};
-use gpui::base::TestSupportExt as _;
+use gpui::base::{SelectableText, TestSupportExt as _};
 use gpui::component::Disableable as _;
 use gpui::component::button::{Button, ButtonVariants};
 use gpui::component::checkbox::Checkbox;
 use gpui::component::input::Textarea;
+use gpui::component::menu::ContextMenuExt;
 use gpui::component::{ActiveTheme, Icon, IconName, Sizable, h_flex, v_flex};
 use gpui::prelude::*;
 use gpui::*;
@@ -105,13 +106,14 @@ impl RepoView {
             .next()
             .map(|c| c.to_uppercase().to_string())
             .unwrap_or_default();
-        let meta_row = |icon: Icon, text: String| {
+        // 详情里的文字都能用鼠标拖选、⌘C 复制(SHA 那一行点击是复制完整 SHA,不做拖选)
+        let meta_row = |id: &'static str, icon: Icon, text: String| {
             h_flex()
                 .gap_2()
                 .text_xs()
                 .text_color(theme.muted_foreground)
                 .child(icon.xsmall())
-                .child(div().truncate().child(text))
+                .child(div().truncate().child(SelectableText::new(id, text)))
         };
 
         let meta = v_flex()
@@ -125,7 +127,10 @@ impl RepoView {
                             .text_base()
                             .font_weight(FontWeight::SEMIBOLD)
                             .whitespace_normal()
-                            .child(detail.info.summary.clone()),
+                            .child(SelectableText::new(
+                                "sel-summary",
+                                detail.info.summary.clone(),
+                            )),
                     )
                     .when(!body.is_empty(), |d| {
                         d.child(
@@ -133,7 +138,7 @@ impl RepoView {
                                 .text_sm()
                                 .text_color(theme.muted_foreground)
                                 .whitespace_normal()
-                                .child(body),
+                                .child(SelectableText::new("sel-body", body)),
                         )
                     }),
             )
@@ -172,14 +177,20 @@ impl RepoView {
                                     .text_sm()
                                     .font_weight(FontWeight::MEDIUM)
                                     .truncate()
-                                    .child(detail.info.author.clone()),
+                                    .child(SelectableText::new(
+                                        "sel-author",
+                                        detail.info.author.clone(),
+                                    )),
                             )
                             .child(
                                 div()
                                     .text_xs()
                                     .text_color(theme.muted_foreground)
                                     .truncate()
-                                    .child(detail.info.email.clone()),
+                                    .child(SelectableText::new(
+                                        "sel-email",
+                                        detail.info.email.clone(),
+                                    )),
                             ),
                     ),
             )
@@ -187,11 +198,13 @@ impl RepoView {
                 v_flex()
                     .gap_1p5()
                     .child(meta_row(
+                        "sel-time",
                         Icon::from(gpui::assets::IconName::Clock),
                         format::datetime(detail.info.time, detail.info.tz_offset),
                     ))
                     .when(detail.committer != detail.info.author, |d| {
                         d.child(meta_row(
+                            "sel-committer",
                             Icon::new(IconName::User),
                             format!(
                                 "提交者 {} · {}",
@@ -201,7 +214,7 @@ impl RepoView {
                         ))
                     })
                     .child(
-                        meta_row(Icon::from(gpui::assets::IconName::Hash), short)
+                        meta_row("sel-sha", Icon::from(gpui::assets::IconName::Hash), short)
                             .id("sha")
                             .font_family("Menlo")
                             .cursor_pointer()
@@ -221,6 +234,7 @@ impl RepoView {
                     )
                     .when(detail.info.parents.len() > 1, |d| {
                         d.child(meta_row(
+                            "sel-parents",
                             Icon::from(gpui::assets::IconName::GitBranch),
                             format!(
                                 "合并提交 · 父提交 {}",
@@ -300,10 +314,13 @@ impl RepoView {
         let theme = cx.theme().clone();
         let oid = detail.info.id;
         let open_path = repo.diff.as_ref().map(|d| d.path.clone());
+        let repo_path = repo.path.clone();
         detail.files[range.start.min(detail.files.len())..range.end.min(detail.files.len())]
             .iter()
             .map(|f| {
                 let path = f.path.clone();
+                let menu_path = f.path.clone();
+                let abs = repo_path.join(&f.path).display().to_string();
                 let active = open_path.as_deref() == Some(f.path.as_str());
                 let (dir, name) = split_path(&f.path);
                 let secondary = match &f.old_path {
@@ -367,6 +384,10 @@ impl RepoView {
                         this.repo
                             .update(cx, |r, cx| r.open_diff(DiffTarget::Commit(oid), path, cx))
                     }))
+                    // 右键:复制路径 / 文件名 / 绝对路径
+                    .context_menu(move |menu, _, _| {
+                        crate::copy_menu::file_menu(menu, &menu_path, abs.clone())
+                    })
                     .into_any_element()
             })
             .collect()
@@ -382,6 +403,7 @@ impl RepoView {
         let theme = cx.theme().clone();
         let status = repo.status.clone();
         let open = repo.diff.as_ref().map(|d| (d.target, d.path.clone()));
+        let repo_path = repo.path.clone();
         let busy = repo.busy.is_some();
         let (unstaged, staged): (Vec<StatusEntry>, Vec<StatusEntry>) = status
             .as_ref()
@@ -409,6 +431,8 @@ impl RepoView {
             let p_open = path.clone();
             let p_action = path.clone();
             let p_discard = path.clone();
+            let p_menu = path.clone();
+            let abs = repo_path.join(&path).display().to_string();
             let untracked = kind == ChangeKind::Untracked;
             // 增删行数;二进制文件或超过统计上限时没有数字
             let lines = if staged_list {
@@ -518,6 +542,10 @@ impl RepoView {
                     })
                 }))
                 .test_support()
+                // 右键:复制路径 / 文件名 / 绝对路径(返回类型不能再接 test_support,所以放最后)
+                .context_menu(move |menu, _, _| {
+                    crate::copy_menu::file_menu(menu, &p_menu, abs.clone())
+                })
         };
 
         let all_unstaged: Vec<(String, bool)> = unstaged

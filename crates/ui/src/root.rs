@@ -132,6 +132,15 @@ impl GitlaneWindow {
         self.views.get(&repo.entity_id()).cloned()
     }
 
+    /// 右键菜单的“复制…”:写进剪贴板并提示。
+    fn copy_text(&mut self, a: &CopyText, window: &mut Window, cx: &mut Context<Self>) {
+        cx.write_to_clipboard(ClipboardItem::new_string(a.0.clone()));
+        window.push_notification(
+            gpui::component::notification::Notification::info("已复制"),
+            cx,
+        );
+    }
+
     /// 从“+”下拉里选了一个已添加过的仓库。
     fn open_repo_path(&mut self, a: &OpenRepoPath, window: &mut Window, cx: &mut Context<Self>) {
         let path = PathBuf::from(&a.0);
@@ -616,6 +625,7 @@ impl Render for GitlaneWindow {
             .font_family(".SystemUIFont")
             .on_action(cx.listener(Self::open_repository))
             .on_action(cx.listener(Self::open_repo_path))
+            .on_action(cx.listener(Self::copy_text))
             .on_action(cx.listener(Self::scan_directory))
             .on_action(cx.listener(Self::close_tab))
             .on_action(cx.listener(Self::next_tab))

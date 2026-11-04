@@ -7,7 +7,8 @@ use gitcore::diff::{DiffTarget, FileDiff, LineKind, inline_changes, pair_changed
 use gitcore::highlight::DiffSyntax;
 use gitcore::patch::PatchDirection;
 use gpui::component::button::{Button, ButtonVariants};
-use gpui::component::{ActiveTheme, Icon, Sizable, h_flex, v_flex};
+use gpui::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
+use gpui::component::{ActiveTheme, Icon, Sizable, WindowExt as _, h_flex, v_flex};
 use gpui::prelude::*;
 use gpui::*;
 use std::collections::{BTreeSet, HashMap};
@@ -54,7 +55,6 @@ impl DiffCache {
                     inline.insert((h, a), n);
                 }
             }
-            emphasize_rewritten(h, hunk, &mut inline);
             if !split {
                 rows.extend((0..hunk.lines.len()).map(|i| DiffRow::Line(h, i)));
                 continue;
@@ -96,43 +96,6 @@ impl DiffCache {
             syntax,
             rows,
             inline,
-        }
-    }
-}
-
-/// 同一改动块里既有删除又有新增时,没能做字符级配对的行整行用深色标出(与 VS Code 一致),
-/// 一眼能分清“改了几个字”和“整行重写”。纯新增 / 纯删除的块只有浅色行底,新文件不会一片深绿。
-fn emphasize_rewritten(
-    h: usize,
-    hunk: &gitcore::diff::Hunk,
-    inline: &mut HashMap<(usize, usize), Vec<Range<usize>>>,
-) {
-    let lines = &hunk.lines;
-    let mut i = 0;
-    while i < lines.len() {
-        if lines[i].kind == LineKind::Context {
-            i += 1;
-            continue;
-        }
-        let start = i;
-        let (mut dels, mut adds) = (0, 0);
-        while i < lines.len() && lines[i].kind != LineKind::Context {
-            match lines[i].kind {
-                LineKind::Deleted => dels += 1,
-                _ => adds += 1,
-            }
-            i += 1;
-        }
-        if dels == 0 || adds == 0 {
-            continue;
-        }
-        for (l, line) in lines.iter().enumerate().take(i).skip(start) {
-            let len = line.text.len();
-            if len > 0 {
-                inline
-                    .entry((h, l))
-                    .or_insert_with(|| std::iter::once(0..len).collect());
-            }
         }
     }
 }
@@ -504,15 +467,62 @@ impl RepoView {
         self.selected_lines.clear();
     }
 
-    fn toggle_line(&mut self, hunk: usize, line: usize, shift: bool, cx: &mut Context<Self>) {
+    /// 选中的 diff 行的文字(按行号顺序,不含 +/- 前缀),没有选中返回 `None`。
+    pub(crate) fn selected_text(&self) -> Option<String> {
+        let cache = self.diff_cache.as_ref()?;
+        let lines: Vec<&str> = self
+            .selected_lines
+            .iter()
+            .filter_map(|&(h, l)| cache.file.hunks.get(h)?.lines.get(l))
+            .map(|x| x.text.as_str())
+            .collect();
+        (!lines.is_empty()).then(|| lines.join("\n"))
+    }
+
+    /// ⌘C / 右键“复制所选行”:把选中的 diff 行写进剪贴板;没有选中时不处理,让别处的复制照常工作。
+    pub(crate) fn on_copy_diff_lines(
+        &mut self,
+        _: &crate::actions::CopyDiffLines,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match self.selected_text() {
+            Some(text) => {
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+                window.push_notification(
+                    gpui::component::notification::Notification::info(format!(
+                        "已复制 {} 行",
+                        self.selected_lines.len()
+                    )),
+                    cx,
+                );
+            }
+            None => cx.propagate(),
+        }
+    }
+
+    pub(crate) fn toggle_line(
+        &mut self,
+        hunk: usize,
+        line: usize,
+        shift: bool,
+        cx: &mut Context<Self>,
+    ) {
         let Some(cache) = &self.diff_cache else {
             return;
         };
+        // 提交 diff 只读,选行是为了复制,上下文行也能选;工作区 diff 只有改动行能选(用于暂存)
+        let copy_only = self
+            .repo
+            .read(cx)
+            .diff
+            .as_ref()
+            .is_some_and(|d| matches!(d.target, DiffTarget::Commit(_)));
         let is_change = |h: usize, l: usize| {
             cache.file.hunks[h]
                 .lines
                 .get(l)
-                .is_some_and(|x| x.kind != LineKind::Context)
+                .is_some_and(|x| copy_only || x.kind != LineKind::Context)
         };
         if !is_change(hunk, line) {
             return;
@@ -555,10 +565,13 @@ impl RepoView {
         text_style.font_family = CODE_FONT.into();
         text_style.font_size = px(CODE_SIZE).into();
         text_style.color = theme.foreground;
-        let selectable = !matches!(target, DiffTarget::Commit(_));
+        // 所有 diff 都能点选行:工作区 diff 选来暂存 / 丢弃,提交 diff 是只读的,选来复制
+        let selectable = true;
+        let copy_only = matches!(target, DiffTarget::Commit(_));
         let file = cache.file.clone();
         let syntax = cache.syntax.clone();
         let rows: Vec<DiffRow> = cache.rows[range.clone()].to_vec();
+        let n_selected = self.selected_lines.len();
 
         let line_cell =
             |h: usize, l: usize, show_old: bool, show_new: bool, selected: bool| -> Div {
@@ -697,6 +710,7 @@ impl RepoView {
                     }
                     DiffRow::Line(h, l) => {
                         let selected = self.selected_lines.contains(&(h, l));
+                        let menu_text = file.hunks[h].lines[l].text.clone();
                         base.child(line_cell(h, l, true, true, selected))
                             .when(selectable, |d| {
                                 d.cursor_pointer().on_mouse_down(
@@ -706,6 +720,7 @@ impl RepoView {
                                     }),
                                 )
                             })
+                            .context_menu(move |menu, _, _| line_menu(menu, n_selected, &menu_text))
                             .into_any_element()
                     }
                     DiffRow::Split(left, right) => {
@@ -724,7 +739,8 @@ impl RepoView {
                                         .flex()
                                         .child(line_cell(h, l, old, !old, selected));
                                     if selectable
-                                        && file.hunks[h].lines[l].kind != LineKind::Context
+                                        && (copy_only
+                                            || file.hunks[h].lines[l].kind != LineKind::Context)
                                     {
                                         d = d.cursor_pointer().on_mouse_down(
                                             MouseButton::Left,
@@ -742,9 +758,15 @@ impl RepoView {
                                     .into_any_element(),
                             }
                         };
+                        // 右键“复制这一行”:有新侧就复制新侧,否则复制旧侧
+                        let menu_text = right
+                            .or(left)
+                            .map(|(h, l)| file.hunks[h].lines[l].text.clone())
+                            .unwrap_or_default();
                         base.child(side(left, true))
                             .child(div().w(px(1.)).h_full().bg(theme.border))
                             .child(side(right, false))
+                            .context_menu(move |menu, _, _| line_menu(menu, n_selected, &menu_text))
                             .into_any_element()
                     }
                 }
@@ -839,12 +861,24 @@ impl RepoView {
     }
 }
 
+/// diff 代码行的右键菜单:有选中行时可以复制选中的行;总可以复制当前这一行。
+fn line_menu(menu: PopupMenu, n_selected: usize, line: &str) -> PopupMenu {
+    let menu = if n_selected > 0 {
+        menu.item(
+            PopupMenuItem::new(format!("复制所选 {n_selected} 行")).on_click(|_, window, cx| {
+                window.dispatch_action(Box::new(crate::actions::CopyDiffLines), cx)
+            }),
+        )
+    } else {
+        menu
+    };
+    menu.item(crate::copy_menu::copy_item("复制这一行", line.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{emphasize_rewritten, expand_tabs, merge_highlights};
-    use gitcore::diff::{DiffLine, Hunk, LineKind};
+    use super::{expand_tabs, merge_highlights};
     use gpui::{HighlightStyle, Hsla, hsla};
-    use std::collections::HashMap;
 
     #[test]
     fn tabs_shift_ranges() {
@@ -875,43 +909,5 @@ mod tests {
         );
         // 越界、不在字符边界上的区间被忽略
         assert!(merge_highlights("中", &[(0..1, red), (0..9, red)], &[], bg).is_empty());
-    }
-
-    fn line(kind: LineKind, text: &str) -> DiffLine {
-        DiffLine {
-            kind,
-            old_no: None,
-            new_no: None,
-            text: text.into(),
-            no_newline: false,
-        }
-    }
-
-    #[test]
-    fn rewritten_lines_are_emphasized_only_in_mixed_blocks() {
-        use LineKind::*;
-        let hunk = Hunk {
-            header: String::new(),
-            old_start: 1,
-            old_lines: 0,
-            new_start: 1,
-            new_lines: 0,
-            lines: vec![
-                line(Deleted, "a"),
-                line(Added, "b"),
-                line(Added, "c"),
-                line(Context, "x"),
-                line(Added, "only added"),
-            ],
-        };
-        let mut inline = HashMap::new();
-        let whole = || -> Vec<std::ops::Range<usize>> { std::iter::once(0..1).collect() };
-        inline.insert((0, 1), whole());
-        emphasize_rewritten(0, &hunk, &mut inline);
-        assert_eq!(inline.get(&(0, 0)), Some(&whole()));
-        assert_eq!(inline.get(&(0, 2)), Some(&whole()));
-        // 已有字符级差异的保持不变;纯新增块不加深
-        assert_eq!(inline.get(&(0, 1)), Some(&whole()));
-        assert!(!inline.contains_key(&(0, 4)));
     }
 }

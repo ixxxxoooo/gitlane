@@ -898,6 +898,7 @@ impl Render for RepoView {
             .on_action(cx.listener(Self::on_focus_search))
             .on_action(cx.listener(Self::on_focus_message))
             .on_action(cx.listener(Self::on_exit_maximized))
+            .on_action(cx.listener(Self::on_copy_diff_lines))
             .on_action(cx.listener(Self::on_abort))
             .on_action(cx.listener(Self::on_toggle_split))
             .on_action(cx.listener(Self::on_select_next))

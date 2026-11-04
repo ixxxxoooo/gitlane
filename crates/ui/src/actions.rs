@@ -38,6 +38,7 @@ actions!(
         CheckForUpdates,
         InstallUpdate,
         ExitMaximizedDiff,
+        CopyDiffLines,
     ]
 );
 
@@ -45,6 +46,11 @@ actions!(
 #[derive(Clone, PartialEq, Debug, Action)]
 #[action(namespace = gitlane, no_json)]
 pub struct OpenRepoPath(pub String);
+
+/// 把一段文字写进剪贴板(右键菜单里的“复制名称 / 复制路径 / 复制这一行”)。
+#[derive(Clone, PartialEq, Debug, Action)]
+#[action(namespace = gitlane, no_json)]
+pub struct CopyText(pub String);
 
 /// 仓库视图的键盘上下文;输入框有自己更深的上下文,所以在输入框里 ⌘Z 仍是文本撤销。
 pub const REPO_CONTEXT: &str = "RepoView";
@@ -79,6 +85,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-\\", ToggleSplitDiff, Some(REPO_CONTEXT)),
         // 只在 diff 撑满时才处理,其余时候 Esc 照常传给输入框等控件
         KeyBinding::new("escape", ExitMaximizedDiff, Some(REPO_CONTEXT)),
+        // 选中了 diff 行时复制它们;没选中则不处理,让文字选择等控件自己的复制照常工作
+        KeyBinding::new("cmd-c", CopyDiffLines, Some(REPO_CONTEXT)),
         KeyBinding::new("down", SelectNextCommit, Some("CommitGraph")),
         KeyBinding::new("up", SelectPrevCommit, Some("CommitGraph")),
         KeyBinding::new("j", SelectNextCommit, Some("CommitGraph")),

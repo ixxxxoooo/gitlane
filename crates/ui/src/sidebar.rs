@@ -580,7 +580,7 @@ fn ref_menu(
     };
     let n = name.to_string();
 
-    match kind {
+    let menu = match kind {
         RefKind::Local => menu
             .item(item(format!("检出 {n}"), RefAction::Checkout(n.clone())))
             .item(item(
@@ -618,7 +618,10 @@ fn ref_menu(
             ))
             .separator()
             .item(item("删除标签".into(), RefAction::DeleteTag(n.clone()))),
-    }
+    };
+    // 所有引用都能复制名称(本地分支、远程分支如 origin/main、标签)
+    menu.separator()
+        .item(crate::copy_menu::copy_item("复制名称", name.to_string()))
 }
 
 fn stash_item(label: &'static str, index: usize, pop: bool) -> PopupMenuItem {

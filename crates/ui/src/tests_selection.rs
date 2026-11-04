@@ -66,3 +66,48 @@ async fn switching_commits_does_not_keep_or_reopen_a_file(cx: &mut TestAppContex
         "切回来后需要重新打开文件"
     );
 }
+
+#[gpui::test]
+async fn commit_diff_lines_can_be_selected_and_copied(cx: &mut TestAppContext) {
+    use gpui::AppContext as _;
+    use gpui::test::TestWindowExt as _;
+    let dir = fixture();
+    let git = Git::new(dir.path());
+    git.run(&["add", "-A"]).unwrap();
+    git.run(&["commit", "-qm", "第二个提交"]).unwrap();
+    let (handle, root) = open(cx, dir.path());
+    let repo = repo(&root, cx);
+    let r = repo.clone();
+    cx.wait_for(handle.into(), TIMEOUT, move |_, cx| {
+        r.read(cx).data.is_some()
+    })
+    .await;
+    let head = cx.update(|cx| repo.read(cx).data.as_ref().unwrap().history.commits[0].id);
+    // 打开这个提交里 main.rs 的 diff
+    cx.update(|cx| {
+        repo.update(cx, |r, cx| {
+            r.select_commit(head, cx);
+            r.open_diff(
+                gitcore::diff::DiffTarget::Commit(head),
+                "main.rs".into(),
+                cx,
+            )
+        })
+    });
+    let r = repo.clone();
+    cx.wait_for(handle.into(), TIMEOUT, move |_, cx| {
+        r.read(cx).diff.as_ref().is_some_and(|d| d.file.is_some())
+    })
+    .await;
+    cx.update_window(handle.into(), |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    let view = cx.update(|cx| root.read(cx).active_view(cx).expect("active view"));
+    // 提交 diff 只读,但每一行(包括上下文行)都能选来复制:第 0 个 hunk 的第 0 行是上下文行
+    cx.update(|cx| {
+        view.update(cx, |v, cx| {
+            assert_eq!(v.selected_text(), None, "没选时没有可复制的内容");
+            v.toggle_line(0, 0, false, cx);
+            assert_eq!(v.selected_text().as_deref(), Some("fn main() {"));
+        })
+    });
+}
