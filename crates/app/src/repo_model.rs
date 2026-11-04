@@ -3,7 +3,7 @@
 
 use crate::command::{self, BusyAction, Command};
 use futures::StreamExt as _;
-use gitcore::diff::{DiffTarget, FileDiff, file_diff};
+use gitcore::diff::{DiffTarget, FileDiff, display_diff, file_diff};
 use gitcore::undo::{self, UndoEntry, UndoStack};
 use gitcore::watch::{Change, RepoWatcher};
 use gitcore::{Cancel, CommitDetail, Error, History, Oid, Refs, Repo, RepoStatus};
@@ -38,6 +38,9 @@ pub struct DiffState {
     pub path: String,
     /// `None` 表示加载中。
     pub file: Option<Arc<FileDiff>>,
+    /// 显示用的同一份 diff,带完整文件作上下文(视图折叠未改动区域);与 `file` 同时写入。
+    /// 二进制、过大或文件太长时与 `file` 是同一个 Arc。
+    pub display: Option<Arc<FileDiff>>,
     pub error: Option<String>,
 }
 
@@ -396,11 +399,12 @@ impl RepoModel {
             .diff
             .take()
             .filter(|d| keep_old && d.path == path && d.target == target);
-        let file = old.and_then(|d| d.file);
+        let (file, display) = old.map_or((None, None), |d| (d.file, d.display));
         self.diff = Some(DiffState {
             target,
             path: path.clone(),
             file,
+            display,
             error: None,
         });
         let repo_path = self.path.clone();
@@ -410,12 +414,17 @@ impl RepoModel {
             let repo_path = repo_path.clone();
             async move {
                 let repo = Repo::open(&repo_path)?;
-                file_diff(&repo, target, &p, force_full, context)
+                let file = Arc::new(file_diff(&repo, target, &p, force_full, context)?);
+                let display = match display_diff(&repo, target, &p, &file)? {
+                    Some(d) => Arc::new(d),
+                    None => file.clone(),
+                };
+                Ok::<_, gitcore::Error>((file, display))
             }
         });
         cx.spawn(async move |this, cx| {
-            let file = match task.await {
-                Ok(f) => Arc::new(f),
+            let (file, display) = match task.await {
+                Ok(f) => f,
                 Err(e) => {
                     let _ = this.update(cx, |this, cx| {
                         if let Some(d) = this.diff.as_mut().filter(|_| generation == this.diff_gen)
@@ -430,6 +439,7 @@ impl RepoModel {
             let _ = this.update(cx, |this, cx| {
                 if let Some(d) = this.diff.as_mut().filter(|_| generation == this.diff_gen) {
                     d.file = Some(file);
+                    d.display = Some(display);
                     cx.notify();
                 }
             });

@@ -9,6 +9,10 @@ use std::ops::Range;
 pub const LARGE_DIFF_LINES: usize = 20_000;
 /// diff 默认的上下文行数(与 git 一致),可在设置里修改。
 pub const DEFAULT_CONTEXT_LINES: u32 = 3;
+/// 显示用 diff 的上下文行数:大到能把整个文件放进一个 hunk,未改动的部分由视图折叠。
+pub const FULL_CONTEXT: u32 = 1 << 24;
+/// 完整文件超过这个行数时,视图退回只显示带少量上下文的 diff,避免一次铺开几十万行。
+pub const FULL_DISPLAY_MAX_LINES: usize = 200_000;
 /// 超过这个长度的行不做字符级差异,避免 O(n·d) 的开销。
 const INLINE_DIFF_MAX_LINE: usize = 1_000;
 
@@ -22,7 +26,7 @@ pub enum DiffTarget {
     Staged,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LineKind {
     Context,
     Added,
@@ -126,6 +130,24 @@ pub fn file_changes(diff: &git2::Diff<'_>) -> Result<Vec<FileChange>> {
         });
     }
     Ok(files)
+}
+
+/// 视图显示用的 diff:同一个文件以完整内容作上下文重读一遍,未改动的部分交给视图折叠。
+///
+/// `file` 是已读到的(暂存用)diff;它是二进制、过大或没有文本改动时不必重读,返回 `None`,
+/// 完整文件超过 `FULL_DISPLAY_MAX_LINES` 行时同样返回 `None`,由调用方退回用 `file` 显示。
+pub fn display_diff(
+    repo: &Repo,
+    target: DiffTarget,
+    path: &str,
+    file: &FileDiff,
+) -> Result<Option<FileDiff>> {
+    if file.binary || file.too_large || file.hunks.is_empty() {
+        return Ok(None);
+    }
+    // 改动行数已经检查过,这里要全文,所以忽略大文件保护
+    let full = file_diff(repo, target, path, true, FULL_CONTEXT)?;
+    Ok((full.line_count() <= FULL_DISPLAY_MAX_LINES).then_some(full))
 }
 
 /// 读取单个文件的 diff。`force_full` 为 true 时忽略大文件保护;`context_lines` 至少为 1,

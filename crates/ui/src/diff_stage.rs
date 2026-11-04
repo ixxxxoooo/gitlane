@@ -15,31 +15,42 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::sync::Arc;
 
-/// 当前显示的 diff:按文件指针识别是否换了文件,`file` 供暂存时按 hunk 与行号生成补丁。
+/// 当前显示的 diff:按文件指针识别是否换了文件。`file` 供暂存时按 hunk 与行号生成补丁,
+/// `display` 是组件显示的全文版本(两者行号一致)。
 pub struct DiffCache {
     pub key: usize,
     pub file: Arc<FileDiff>,
+    pub display: Arc<FileDiff>,
 }
 
-/// 组件选中的行范围对应到文件里的 (hunk, 行) 集合。
+/// 组件选中的行范围对应到暂存用 diff 里的 (hunk, 行) 集合。
 ///
-/// 范围的两端各带“哪一侧 + 该侧行号”,按显示顺序取两端之间的所有行;
+/// 范围的两端各带“哪一侧 + 该侧行号”,先在显示用的全文 diff 里按显示顺序取两端之间的行,
+/// 再按 (类型, 旧行号, 新行号) 找回 `file` 里的同一行:全文 diff 里拖选可以从折叠区之外的
+/// 上下文行开始,`file` 里没有这些行,直接在 `file` 里找端点会找不到。
 /// `copy_only` 为真(提交 diff,只读)时上下文行也算,否则只留改动行(能暂存的行)。
-/// 找不到端点(行号不在这个 diff 里)时返回空集合。
+/// 找不到端点时返回空集合。
 pub fn lines_in_range(
     file: &FileDiff,
+    display: &FileDiff,
     range: &DiffLineRange,
     copy_only: bool,
 ) -> BTreeSet<(usize, usize)> {
-    let flat: Vec<(usize, usize)> = file
-        .hunks
-        .iter()
-        .enumerate()
-        .flat_map(|(h, hunk)| (0..hunk.lines.len()).map(move |l| (h, l)))
-        .collect();
+    let flat = |f: &FileDiff| -> Vec<(usize, usize)> {
+        f.hunks
+            .iter()
+            .enumerate()
+            .flat_map(|(h, hunk)| (0..hunk.lines.len()).map(move |l| (h, l)))
+            .collect()
+    };
+    let key = |f: &FileDiff, (h, l): (usize, usize)| {
+        let line = &f.hunks[h].lines[l];
+        (line.kind, line.old_no, line.new_no)
+    };
+    let shown = flat(display);
     let locate = |side: DiffSide, no: usize| {
-        flat.iter().position(|&(h, l)| {
-            let line = &file.hunks[h].lines[l];
+        shown.iter().position(|&(h, l)| {
+            let line = &display.hunks[h].lines[l];
             let own = match side {
                 DiffSide::Original => line.old_no,
                 DiffSide::Modified => line.new_no,
@@ -54,12 +65,14 @@ pub fn lines_in_range(
         return BTreeSet::new();
     };
     let (a, b) = (a.min(b), a.max(b));
-    flat[a..=b]
+    let picked: BTreeSet<_> = shown[a..=b]
         .iter()
-        .copied()
-        .filter(|&(h, l)| {
-            copy_only || file.hunks[h].lines[l].kind != gitcore::diff::LineKind::Context
-        })
+        .map(|&at| key(display, at))
+        .filter(|&(kind, _, _)| copy_only || kind != gitcore::diff::LineKind::Context)
+        .collect();
+    flat(file)
+        .into_iter()
+        .filter(|&at| picked.contains(&key(file, at)))
         .collect()
 }
 
@@ -108,7 +121,9 @@ impl RepoView {
     pub(crate) fn select_range(&mut self, range: Option<&DiffLineRange>, cx: &mut Context<Self>) {
         let copy_only = self.diff_copy_only(cx);
         self.selected_lines = match (range, &self.diff_cache) {
-            (Some(range), Some(cache)) => lines_in_range(&cache.file, range, copy_only),
+            (Some(range), Some(cache)) => {
+                lines_in_range(&cache.file, &cache.display, range, copy_only)
+            }
             _ => BTreeSet::new(),
         };
         cx.notify();
@@ -252,7 +267,7 @@ mod tests {
     #[test]
     fn range_on_modified_side_covers_the_deleted_line_in_between() {
         let r = DiffLineRange::new("a.rs", DiffSide::Modified, 1, 3);
-        let got = lines_in_range(&sample(), &r, false);
+        let got = lines_in_range(&sample(), &sample(), &r, false);
         // 上下文行不能暂存;删除行夹在中间,按显示顺序算选中
         assert_eq!(
             got.into_iter().collect::<Vec<_>>(),
@@ -263,17 +278,32 @@ mod tests {
     #[test]
     fn copy_only_keeps_context_lines() {
         let r = DiffLineRange::new("a.rs", DiffSide::Modified, 1, 4);
-        assert_eq!(lines_in_range(&sample(), &r, true).len(), 5);
+        assert_eq!(lines_in_range(&sample(), &sample(), &r, true).len(), 5);
     }
 
     #[test]
     fn range_from_original_to_modified_side_and_unknown_lines() {
         let r =
             DiffLineRange::new("a.rs", DiffSide::Original, 2, 2).with_end_side(DiffSide::Modified);
-        let got = lines_in_range(&sample(), &r, false);
+        let got = lines_in_range(&sample(), &sample(), &r, false);
         assert_eq!(got.into_iter().collect::<Vec<_>>(), vec![(0, 1), (0, 2)]);
         // 行号不在 diff 里:空集合
         let missing = DiffLineRange::new("a.rs", DiffSide::Modified, 40, 41);
-        assert!(lines_in_range(&sample(), &missing, false).is_empty());
+        assert!(lines_in_range(&sample(), &sample(), &missing, false).is_empty());
+    }
+
+    #[test]
+    fn range_starting_outside_the_staging_hunks_maps_back_by_line_numbers() {
+        // 暂存用 diff 没有上下文,显示用的全文 diff 有;拖选从全文里的上下文行 1 开始
+        let mut staging = sample();
+        staging.hunks[0]
+            .lines
+            .retain(|l| l.kind != LineKind::Context);
+        let r = DiffLineRange::new("a.rs", DiffSide::Modified, 1, 4);
+        let got = lines_in_range(&staging, &sample(), &r, false);
+        assert_eq!(
+            got.into_iter().collect::<Vec<_>>(),
+            vec![(0, 0), (0, 1), (0, 2)]
+        );
     }
 }

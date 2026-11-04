@@ -27,6 +27,10 @@
   行号栏固定,代码在栏内裁剪、按共享的横向偏移平移。外层滚动容器只用来记录偏移和可滚范围
   (列表加宽 `scroll_range`、再右移 `scroll_x` 抵消外层平移)。选区按同一个偏移换算,不受影响。
   统一视图同样处理,横向滚动时行号不再被带走。测试见 `layout_tests.rs`;
+- 显示完整文件(标准 2):`gitcore::diff::display_diff` 用极大的上下文(`FULL_CONTEXT`)把同一个文件重读一遍,
+  整个文件成为一个 hunk,组件按设置里的上下文行数折叠未改动区域,点折叠行展开。暂存仍用按设置上下文读的那份 diff
+  (hunk 划分不变),两份行号一致,选区按 (类型, 旧行号, 新行号) 换算回暂存 diff。
+  文件超过 `FULL_DISPLAY_MAX_LINES` 行时退回只显示暂存那份。相邻 hunk 间没有隐藏行时不出分隔行。
 - 新增直接依赖 `smallvec`、`unicode-segmentation`、`unicode-width`:上游模块原本就用,
   已在依赖树里(gpui-component 的依赖),不引入新下载。
 - 上游的单元测试依赖 gpui-component 内部的测试设施,没有搬过来;改动处补本 crate 自己的测试。

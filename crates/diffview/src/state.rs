@@ -1686,10 +1686,14 @@ fn project_file(
             if hunk.pairs().start != ix {
                 break;
             }
-            rows.push(DisplayRow::Hunk {
-                file,
-                hunk: hunk_ix,
-            });
+            // Gitlane:相邻 hunk 之间没有隐藏行时(例如全文 diff 只有一个 hunk)不出分隔行
+            let previous = hunk_ix.checked_sub(1).map(|ix| &hunks[ix]);
+            if hunk.hidden_lines_before(previous) > 0 {
+                rows.push(DisplayRow::Hunk {
+                    file,
+                    hunk: hunk_ix,
+                });
+            }
             hunk_ix += 1;
         }
         if !visible[ix] {

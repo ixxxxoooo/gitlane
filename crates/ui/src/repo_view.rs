@@ -70,9 +70,8 @@ impl RepoView {
 
         let diff_state = cx.new(|cx| {
             // 不做词级强调:组件按“词”比较,中文每个字算一个词,两行注释会被切成忽深忽浅的碎片
-            diffview::DiffState::new(Vec::new(), cx)
-                .with_context_lines(None)
-                .with_inline_unit(None)
+            // 折叠未改动区域的上下文行数在 sync_diff_state 里跟设置同步
+            diffview::DiffState::new(Vec::new(), cx).with_inline_unit(None)
         });
         let subscriptions = vec![
             cx.subscribe(&diff_state, |this, _, e: &diffview::DiffEvent, cx| {

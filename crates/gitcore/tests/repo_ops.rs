@@ -1,6 +1,6 @@
 //! 用临时仓库做的集成测试:读路径、暂存、提交、撤销。
 
-use gitcore::diff::{DEFAULT_CONTEXT_LINES, DiffTarget, file_diff};
+use gitcore::diff::{DEFAULT_CONTEXT_LINES, DiffTarget, display_diff, file_diff};
 use gitcore::ops::{CommitOptions, ResetMode};
 use gitcore::patch::PatchDirection;
 use gitcore::undo::{self, UndoStack};
@@ -206,6 +206,40 @@ fn context_lines_setting_keeps_line_staging_working() {
         .apply_selection(&narrow, 0, Some(&sel), PatchDirection::Stage)
         .unwrap();
     assert_eq!(f.index_content("a.txt"), lines("five", "15"));
+}
+
+#[test]
+fn display_diff_holds_the_whole_file_in_one_hunk() {
+    let f = Fixture::new();
+    let base: String = (1..=30).map(|i| format!("{i}\n")).collect();
+    f.commit_file("a.txt", &base, "base");
+    let changed: String = (1..=30)
+        .map(|i| match i {
+            5 => "five\n".to_string(),
+            25 => "x\n".to_string(),
+            _ => format!("{i}\n"),
+        })
+        .collect();
+    f.write("a.txt", &changed);
+    let repo = f.repo();
+
+    let d = file_diff(&repo, DiffTarget::Unstaged, "a.txt", false, 3).unwrap();
+    assert_eq!(d.hunks.len(), 2);
+    let full = display_diff(&repo, DiffTarget::Unstaged, "a.txt", &d)
+        .unwrap()
+        .expect("文本改动要重读");
+    // 整个文件一个 hunk:30 行上下文与改动,加上两条删除
+    assert_eq!(full.hunks.len(), 1);
+    assert_eq!(full.hunks[0].lines.len(), 32);
+    assert_eq!((full.additions, full.deletions), (d.additions, d.deletions));
+
+    // 没有文本改动(未出现在 diff 里)不重读
+    let none = file_diff(&repo, DiffTarget::Unstaged, "missing.txt", false, 3).unwrap();
+    assert!(
+        display_diff(&repo, DiffTarget::Unstaged, "missing.txt", &none)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]

@@ -6,7 +6,8 @@
 use crate::diff_stage::{DiffCache, syntax_highlighter};
 use crate::repo_view::RepoView;
 use diffview::{
-    Diff, DiffChangeIndicator, DiffFile, DiffGutterMarker, DiffLinePosition, DiffMode, DiffSide,
+    Diff, DiffChangeIndicator, DiffFile, DiffGutterMarker, DiffHunkSeparator, DiffLinePosition,
+    DiffMode, DiffSide,
 };
 use gitcore::diff::{DiffTarget, FileDiff, LineKind};
 use gitcore::patch::{PatchDirection, display_patch};
@@ -39,6 +40,7 @@ impl RepoView {
         let path = state.path.clone();
         let error = state.error.clone();
         let file = state.file.clone();
+        let display = state.display.clone();
 
         let header = self.render_diff_header(&path, target, file.as_deref(), split, cx);
         let body: AnyElement = match (error, file) {
@@ -77,7 +79,8 @@ impl RepoView {
                 .child("没有文本改动(可能只改了权限)")
                 .into_any_element(),
             (None, Some(f)) => {
-                self.sync_diff_state(f.clone(), split, cx);
+                let display = display.unwrap_or_else(|| f.clone());
+                self.sync_diff_state(f.clone(), display, split, cx);
                 self.render_diff_body(&f, target, cx)
             }
         };
@@ -90,26 +93,39 @@ impl RepoView {
     }
 
     /// 让组件的状态跟上当前文件、并排 / 统一模式与亮暗主题(高亮颜色按主题取)。
-    fn sync_diff_state(&mut self, file: Arc<FileDiff>, split: bool, cx: &mut Context<Self>) {
+    ///
+    /// 参数:`file` 暂存用的 diff;`display` 带完整文件的同一份 diff,组件显示它并折叠未改动区域。
+    fn sync_diff_state(
+        &mut self,
+        file: Arc<FileDiff>,
+        display: Arc<FileDiff>,
+        split: bool,
+        cx: &mut Context<Self>,
+    ) {
         let key = Arc::as_ptr(&file) as usize;
         if self.diff_cache.as_ref().is_none_or(|c| c.key != key) {
             // 语言约定传文件路径,高亮函数按路径识别 Vue / TS 等
-            let files: Vec<DiffFile> = DiffFile::parse(&display_patch(&file))
+            let files: Vec<DiffFile> = DiffFile::parse(&display_patch(&display))
                 .unwrap_or_default()
                 .into_iter()
                 .map(|f| f.with_language(file.path.clone()))
                 .collect();
             self.diff_state.update(cx, |s, cx| s.set_files(files, cx));
-            self.diff_cache = Some(DiffCache { key, file });
+            self.diff_cache = Some(DiffCache { key, file, display });
         }
         let mode = if split {
             DiffMode::Split
         } else {
             DiffMode::Unified
         };
+        // 设置里的上下文行数同时决定暂存的 hunk 划分与这里折叠时保留几行
+        let context = Some(self.repo.read(cx).diff_context.max(1) as usize);
         self.diff_state.update(cx, |s, cx| {
             if s.mode() != mode {
                 s.set_mode(mode, cx);
+            }
+            if s.context_lines() != context {
+                s.set_context_lines(context, cx);
             }
         });
         let dark = cx.theme().is_dark();
@@ -146,6 +162,8 @@ impl RepoView {
         let diff = Diff::new(&self.diff_state)
             .header_visible(false)
             .change_indicator(DiffChangeIndicator::Signs)
+            // 全文显示时只有一个 hunk、不出分隔行;退回带少量上下文的 diff 时显示“隐藏了 N 行”
+            .hunk_separator(DiffHunkSeparator::LineInfo)
             // 不换行:diffview 按编辑器的方式让各栏跟可视区等宽、栏内横向滚动(见 decisions/0008)
             .soft_wrap(false)
             .gutter_markers(markers)
