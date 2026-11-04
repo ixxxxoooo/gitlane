@@ -342,11 +342,7 @@ impl RepoView {
             .border_b_1()
             .border_color(theme.border)
             .bg(theme.secondary)
-            .child(
-                crate::file_icons::file_icon(path)
-                    .xsmall()
-                    .text_color(theme.muted_foreground),
-            )
+            .child(crate::file_icons::file_icon(path, &theme).xsmall())
             .child(
                 h_flex()
                     .flex_1()

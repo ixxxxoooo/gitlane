@@ -13,6 +13,16 @@ pub fn lane_color(index: u16, dark: bool) -> Hsla {
     }
 }
 
+/// 文件类型图标的颜色:给定色相(度),亮暗主题下都清晰,饱和度适中不抢文字。
+pub fn file_tint(hue: f32, dark: bool) -> Hsla {
+    let h = hue / 360.;
+    if dark {
+        hsla(h, 0.55, 0.65, 1.)
+    } else {
+        hsla(h, 0.6, 0.42, 1.)
+    }
+}
+
 pub struct DiffColors {
     pub added_bg: Hsla,
     pub added_word: Hsla,

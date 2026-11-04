@@ -308,11 +308,7 @@ impl RepoView {
                     .cursor_pointer()
                     .when(active, |d| d.bg(theme.list_active))
                     .when(!active, |d| d.hover(|s| s.bg(theme.list_hover)))
-                    .child(
-                        crate::file_icons::file_icon(&f.path)
-                            .xsmall()
-                            .text_color(theme.muted_foreground),
-                    )
+                    .child(crate::file_icons::file_icon(&f.path, &theme).xsmall())
                     .child(
                         h_flex()
                             .flex_1()
@@ -421,11 +417,7 @@ impl RepoView {
                         .text_color(kind_color(kind, &theme))
                         .child(kind.letter()),
                 )
-                .child(
-                    crate::file_icons::file_icon(&e.path)
-                        .xsmall()
-                        .text_color(theme.muted_foreground),
-                )
+                .child(crate::file_icons::file_icon(&e.path, &theme).xsmall())
                 .child(
                     h_flex()
                         .flex_1()
