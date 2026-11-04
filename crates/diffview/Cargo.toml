@@ -1,0 +1,15 @@
+[package]
+name = "diffview"
+version.workspace = true
+# fork 自 gpui-component(Apache-2.0),沿用上游许可
+license = "Apache-2.0"
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+gpui.workspace = true
+similar.workspace = true
+# 上游 diff 模块原本就用这两个库,已在依赖树里(gpui-component 的依赖),不引入新下载
+smallvec = "1"
+unicode-segmentation = "1"
+unicode-width = "0.2"

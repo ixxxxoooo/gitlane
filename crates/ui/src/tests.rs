@@ -46,6 +46,7 @@ pub(crate) fn open(
 ) -> (WindowHandle<Root>, Entity<GitlaneWindow>) {
     cx.update(|cx| {
         gpui::init(cx);
+        diffview::init(cx);
         crate::actions::bind_keys(cx);
     });
     let path = path.to_path_buf();

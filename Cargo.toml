@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/gitcore", "crates/graph", "crates/app", "crates/ui"]
+members = ["crates/gitcore", "crates/graph", "crates/app", "crates/diffview", "crates/ui"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,6 +12,7 @@ publish = false
 gitcore = { path = "crates/gitcore" }
 graph = { path = "crates/graph" }
 app = { path = "crates/app" }
+diffview = { path = "crates/diffview" }
 
 # GPUI 没有 1.0,固定到精确版本;升级单独排期(见 docs/decisions/0002-pin-gpui.md)
 gpui = { package = "gpui-kit", version = "=0.9.0" }

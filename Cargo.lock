@@ -1490,6 +1490,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "diffview"
+version = "0.1.0"
+dependencies = [
+ "gpui-kit",
+ "similar",
+ "smallvec",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7597,6 +7608,7 @@ name = "ui"
 version = "0.1.0"
 dependencies = [
  "app",
+ "diffview",
  "env_logger",
  "gitcore",
  "gpui-kit",

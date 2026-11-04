@@ -5,12 +5,12 @@
 
 use crate::diff_stage::{DiffCache, syntax_highlighter};
 use crate::repo_view::RepoView;
+use diffview::{
+    Diff, DiffChangeIndicator, DiffFile, DiffGutterMarker, DiffLinePosition, DiffMode, DiffSide,
+};
 use gitcore::diff::{DiffTarget, FileDiff, LineKind};
 use gitcore::patch::{PatchDirection, display_patch};
 use gpui::component::button::{Button, ButtonVariants};
-use gpui::component::diff::{
-    Diff, DiffChangeIndicator, DiffFile, DiffGutterMarker, DiffLinePosition, DiffMode, DiffSide,
-};
 use gpui::component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui::component::{ActiveTheme, Icon, Sizable, h_flex, v_flex};
 use gpui::prelude::*;

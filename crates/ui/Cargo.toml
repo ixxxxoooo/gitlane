@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 app.workspace = true
+diffview.workspace = true
 gitcore.workspace = true
 graph.workspace = true
 gpui.workspace = true

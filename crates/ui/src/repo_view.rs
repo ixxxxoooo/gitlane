@@ -24,7 +24,7 @@ pub struct RepoView {
     pub(crate) graph_focus: FocusHandle,
     pub(crate) graph_scroll: UniformListScrollHandle,
     /// diff 组件的状态(文件、模式、选区、滚动都在里面)。
-    pub(crate) diff_state: Entity<gpui::component::diff::DiffState>,
+    pub(crate) diff_state: Entity<diffview::DiffState>,
     /// 组件当前按哪种主题配的高亮色。
     pub(crate) diff_dark: Option<bool>,
     pub(crate) search: Entity<InputState>,
@@ -70,15 +70,14 @@ impl RepoView {
 
         let diff_state = cx.new(|cx| {
             // 不做词级强调:组件按“词”比较,中文每个字算一个词,两行注释会被切成忽深忽浅的碎片
-            gpui::component::diff::DiffState::new(Vec::new(), cx)
+            diffview::DiffState::new(Vec::new(), cx)
                 .with_context_lines(None)
                 .with_inline_unit(None)
         });
         let subscriptions = vec![
-            cx.subscribe(
-                &diff_state,
-                |this, _, e: &gpui::component::diff::DiffEvent, cx| this.on_diff_event(e, cx),
-            ),
+            cx.subscribe(&diff_state, |this, _, e: &diffview::DiffEvent, cx| {
+                this.on_diff_event(e, cx)
+            }),
             cx.observe(&repo, |this, _, cx| {
                 this.prune_selection(cx);
                 cx.notify();

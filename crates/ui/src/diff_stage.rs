@@ -6,10 +6,10 @@
 use crate::colors::syntax_color;
 use crate::repo_view::RepoView;
 use app::Command;
+use diffview::{DiffEvent, DiffLineRange, DiffSide};
 use gitcore::diff::{DiffTarget, FileDiff};
 use gitcore::patch::PatchDirection;
 use gpui::component::WindowExt as _;
-use gpui::component::diff::{DiffEvent, DiffLineRange, DiffSide};
 use gpui::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
@@ -207,8 +207,8 @@ impl RepoView {
 #[cfg(test)]
 mod tests {
     use super::lines_in_range;
+    use diffview::{DiffLineRange, DiffSide};
     use gitcore::diff::{DiffLine, FileDiff, Hunk, LineKind};
-    use gpui::component::diff::{DiffLineRange, DiffSide};
 
     fn line(kind: LineKind, old: Option<u32>, new: Option<u32>) -> DiffLine {
         DiffLine {

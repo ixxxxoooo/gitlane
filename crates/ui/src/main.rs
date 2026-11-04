@@ -123,6 +123,7 @@ fn main() {
         .with_assets(assets::AppAssets)
         .run(move |cx: &mut App| {
             gpui::init(cx);
+            diffview::init(cx);
             actions::bind_keys(cx);
             cx.on_action(|_: &Quit, cx| cx.quit());
             cx.set_menus(menus());
