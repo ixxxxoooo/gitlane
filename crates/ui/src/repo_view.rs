@@ -643,7 +643,7 @@ impl RepoView {
         h_flex()
             .id("toolbar")
             .test_support()
-            .h(px(44.))
+            .h(px(36.))
             .px_3()
             .gap_1()
             .border_b_1()
@@ -683,7 +683,6 @@ impl RepoView {
                     .test_support()
                     .flex_none()
                     .gap_1()
-                    .child(sep())
                     .child(
                         Button::new("undo")
                             .small()
