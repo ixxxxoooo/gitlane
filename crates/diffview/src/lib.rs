@@ -924,8 +924,7 @@ fn render_diff(
         .bg(cx.theme().background)
         .text_color(cx.theme().foreground)
         .text_sm()
-        .border_1()
-        .border_color(cx.theme().border)
+        // Gitlane:不画外框,标题栏与左右分隔条已有各自的线,再加一圈会重边
         .child(body)
         .refine_style(&props.style)
         .into_any_element()
