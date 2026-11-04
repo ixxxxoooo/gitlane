@@ -20,7 +20,7 @@
 | 模块 | 内容 |
 |---|---|
 | `repo.rs` | **读路径**(git2):`history`(拓扑+时间排序,附父提交行号)、`refs`(分支/远程/标签/stash,领先落后)、`status`、`commit_detail` |
-| `diff.rs` | 单文件 diff(提交 / 已暂存 / 未暂存)、大文件保护(`LARGE_DIFF_LINES`)、删除块与新增块配对、字符级差异(`similar`)、读取两侧完整文件(`side_texts`,供高亮) |
+| `diff.rs` | 单文件 diff(提交 / 已暂存 / 未暂存)、大文件保护(`LARGE_DIFF_LINES`)、删除块与新增块配对、字符级差异(`similar`) |
 | `highlight.rs` | diff 语法高亮(syntect):从文件开头解析到最后一个改动行,只输出 `keyword` / `string` 这类高亮名,颜色由 ui 的 `colors.rs` 决定;文件太大或内容对不上时按 hunk 解析 |
 | `patch.rs` | 从 hunk 中挑选部分行生成补丁,支持暂存 / 取消暂存 / 丢弃三个方向 |
 | `config.rs` | 全局 git 配置(`~/.gitconfig`)的读写:身份、pull 方式、提交签名、默认分支名;读写都走系统 `git config`,测试用 `--file` 指向临时文件 |

@@ -35,5 +35,5 @@ diff 区域改用 `gpui::component::diff::{Diff, DiffState}`。
 - 配色改用组件的主题色,不再是自定义的浅粉 / 浅绿;
 - 语法高亮由“从完整文件开头解析”退回“按 hunk 的一侧解析”:hunk 起点落在多行注释、
   模板字符串或 Vue 的 `<template>` / `<script>` 中间时,高亮可能不准。
-  `app` 里按完整文件算高亮的后台任务(`highlight_diff`)现在不再被界面使用,后续清理;
+  原先按完整文件算高亮的后台任务(`highlight_diff`、`side_texts`、`DiffState.syntax`)已一并删除;
 - 文本选区由组件实现,我们无法改它的行为(如拖到边缘自动滚动取决于组件)。
