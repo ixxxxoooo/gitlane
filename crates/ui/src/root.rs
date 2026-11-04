@@ -10,7 +10,7 @@ use app::{ThemePreference, Workspace};
 use gpui::base::Root;
 use gpui::component::button::{Button, ButtonVariants};
 use gpui::component::{
-    ActiveTheme, IconName, Sizable, Theme, ThemeMode, TitleBar, WindowExt, h_flex, v_flex,
+    ActiveTheme, Icon, IconName, Sizable, Theme, ThemeMode, TitleBar, WindowExt, h_flex, v_flex,
 };
 use gpui::prelude::*;
 use gpui::*;
@@ -358,24 +358,28 @@ impl GitlaneWindow {
             let r = repo.read(cx);
             let is_active = i == active;
             let busy = r.busy.is_some();
+            let group = SharedString::from(format!("tab-group-{i}"));
+            // 胶囊式标签:当前标签浅灰底、字重加粗,其余只有弱化文字;关闭按钮只在悬停或当前标签上显示
             h_flex()
                 .id(("tab", i))
-                .h_full()
-                .pl_3()
+                .group(group.clone())
+                .h(px(26.))
+                .pl_2p5()
                 .pr_1()
-                .gap_1()
+                .gap_1p5()
+                .rounded_lg()
                 .text_sm()
-                .border_r_1()
-                .border_color(theme.border)
                 .cursor_pointer()
                 .when(is_active, |d| {
-                    d.bg(theme.tab_active)
-                        .text_color(theme.tab_active_foreground)
+                    d.bg(theme.muted)
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(theme.foreground)
                 })
                 .when(!is_active, |d| {
                     d.text_color(theme.muted_foreground)
-                        .hover(|s| s.bg(theme.list_hover))
+                        .hover(|s| s.bg(theme.muted.opacity(0.5)))
                 })
+                .child(Icon::new(IconName::Folder).xsmall())
                 .child(r.name.clone())
                 .when(busy, |d| {
                     d.child(gpui::component::spinner::Spinner::new().xsmall())
@@ -385,6 +389,9 @@ impl GitlaneWindow {
                         .xsmall()
                         .ghost()
                         .icon(IconName::Close)
+                        .when(!is_active, |b| {
+                            b.invisible().group_hover(group.clone(), |s| s.visible())
+                        })
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.workspace.update(cx, |ws, cx| ws.close_repo(i, cx))
                         })),
