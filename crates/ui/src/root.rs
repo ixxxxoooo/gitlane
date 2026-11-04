@@ -63,6 +63,13 @@ impl GitlaneWindow {
                 window.refresh();
             }
         });
+        // 窗口移动 / 缩放后保存位置大小,下次启动恢复
+        let bounds_tracker = crate::window_state::track(
+            window,
+            cx,
+            workspace.clone(),
+            crate::window_state::WindowKind::Main,
+        );
         let mut this = Self {
             workspace,
             views: HashMap::new(),
@@ -70,7 +77,7 @@ impl GitlaneWindow {
             applied_theme: theme,
             settings_window: None,
             update: UpdateState::default(),
-            _subscriptions: vec![sub, appearance],
+            _subscriptions: vec![sub, appearance, bounds_tracker],
         };
         this.sync_views(window, cx);
         this
@@ -255,17 +262,23 @@ impl GitlaneWindow {
             return;
         }
         let ws = self.workspace.clone();
+        // 恢复上次的设置窗口位置与大小
+        let saved = ws.read(cx).settings.settings_window;
         let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                None,
-                size(px(860.), px(620.)),
+            window_bounds: Some(crate::window_state::initial_bounds(
+                saved,
+                (860., 620.),
+                crate::window_state::SETTINGS_MIN,
                 cx,
-            ))),
+            )),
             titlebar: Some(TitlebarOptions {
                 title: Some("设置".into()),
                 ..Default::default()
             }),
-            window_min_size: Some(size(px(640.), px(420.))),
+            window_min_size: Some(size(
+                px(crate::window_state::SETTINGS_MIN.0),
+                px(crate::window_state::SETTINGS_MIN.1),
+            )),
             ..Default::default()
         };
         match gpui::open_window(options, cx, move |window, cx| {

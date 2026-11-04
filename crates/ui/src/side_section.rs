@@ -47,6 +47,7 @@ impl RepoView {
                         if !this.side_collapsed.remove(key) {
                             this.side_collapsed.insert(key);
                         }
+                        this.save_layout(cx);
                         cx.notify();
                     }))
             })

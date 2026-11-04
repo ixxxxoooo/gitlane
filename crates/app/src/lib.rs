@@ -16,5 +16,5 @@ pub mod workspace;
 
 pub use command::{BusyAction, Command};
 pub use repo_model::{DiffState, NoticeKind, RepoData, RepoEvent, RepoModel, Selection};
-pub use settings::{Settings, TerminalApp, ThemePreference};
+pub use settings::{Settings, TerminalApp, ThemePreference, WindowMode, WindowState};
 pub use workspace::Workspace;

@@ -47,6 +47,8 @@ impl Workspace {
             ephemeral,
             _auto_fetch: (!ephemeral).then(|| Self::start_auto_fetch(cx)),
         };
+        // 先取出:下面每打开一个仓库都会触发保存,会把它覆盖成“最后打开的那个”
+        let saved_active = ws.settings.active_repo.clone();
         if ws.settings.restore_tabs {
             for path in ws.settings.open_repos.clone() {
                 if let Err(e) = ws.open_repo(&path, cx) {
@@ -54,7 +56,11 @@ impl Workspace {
                 }
             }
         }
-        ws.active = 0;
+        // 恢复上次选中的标签;那个仓库没能打开时回到第一个
+        ws.active = saved_active
+            .as_ref()
+            .and_then(|p| ws.repos.iter().position(|r| r.read(cx).path == *p))
+            .unwrap_or(0);
         ws.check_git(cx);
         ws
     }
@@ -169,6 +175,7 @@ impl Workspace {
     pub fn activate(&mut self, index: usize, cx: &mut Context<Self>) {
         if index < self.repos.len() {
             self.active = index;
+            self.persist(cx);
             cx.notify();
         }
     }
@@ -272,6 +279,7 @@ impl Workspace {
             return;
         }
         self.settings.open_repos = self.repos.iter().map(|r| r.read(cx).path.clone()).collect();
+        self.settings.active_repo = self.active_repo().map(|r| r.read(cx).path.clone());
         let settings = self.settings.clone();
         cx.background_spawn(async move { settings.save() }).detach();
     }

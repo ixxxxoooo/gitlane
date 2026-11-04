@@ -443,6 +443,7 @@ impl RepoView {
                 })
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.diff_maximized = !this.diff_maximized;
+                    this.save_layout(cx);
                     cx.notify();
                 })),
         )
@@ -454,6 +455,7 @@ impl RepoView {
                 .on_click(cx.listener(|this, _, _, cx| {
                     // 关掉 diff 时一并还原撑满状态,下次打开仍是上下分栏
                     this.diff_maximized = false;
+                    this.save_layout(cx);
                     this.repo.update(cx, |r, cx| r.close_diff(cx))
                 })),
         )

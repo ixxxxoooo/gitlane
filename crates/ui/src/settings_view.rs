@@ -80,6 +80,13 @@ impl SettingsView {
             cx.notify();
         }));
 
+        // 设置窗口移动 / 缩放后保存位置大小
+        subs.push(crate::window_state::track(
+            window,
+            cx,
+            workspace.clone(),
+            crate::window_state::WindowKind::Settings,
+        ));
         let mut this = Self {
             workspace,
             inputs,

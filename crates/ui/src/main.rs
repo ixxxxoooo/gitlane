@@ -24,12 +24,15 @@ mod sidebar;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_layout;
+#[cfg(test)]
 mod tests_panels;
 #[cfg(test)]
 mod tests_sidebar;
 #[cfg(test)]
 mod tests_welcome;
 mod updater;
+mod window_state;
 
 use actions::*;
 use gpui::*;
@@ -119,13 +122,22 @@ fn main() {
             cx.on_action(|_: &Quit, cx| cx.quit());
             cx.set_menus(menus());
 
-            let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
+            // 恢复上次的窗口位置、大小与显示方式;保存的位置不在任何屏幕上时回到主屏居中
+            let bounds = window_state::initial_bounds(
+                app::Settings::load().window,
+                (1440., 900.),
+                window_state::MAIN_MIN,
+                cx,
+            );
             let options = WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                window_bounds: Some(bounds),
                 // 标签栏画在顶栏里,系统标题栏透明、红绿灯保留;拖动与双击由 TitleBar 自己处理
                 titlebar: Some(gpui::component::TitleBar::title_bar_options()),
                 app_owns_titlebar_drag: true,
-                window_min_size: Some(size(px(960.), px(600.))),
+                window_min_size: Some(size(
+                    px(window_state::MAIN_MIN.0),
+                    px(window_state::MAIN_MIN.1),
+                )),
                 ..Default::default()
             };
             let initial = initial.clone();

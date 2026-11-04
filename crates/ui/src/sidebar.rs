@@ -269,6 +269,7 @@ impl RepoView {
         if !self.collapsed.remove(key) {
             self.collapsed.insert(key.to_string());
         }
+        self.save_layout(cx);
         cx.notify();
     }
 

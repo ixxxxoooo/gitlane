@@ -55,6 +55,11 @@ impl RepoView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        // 上次退出时的布局状态(折叠、撑满),新开的标签也沿用
+        let saved = workspace
+            .upgrade()
+            .map(|ws| ws.read(cx).settings.clone())
+            .unwrap_or_default();
         let search =
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索提交信息 / 作者 / SHA"));
         let sidebar_filter =
@@ -105,10 +110,13 @@ impl RepoView {
             last_clicked_line: None,
             diff_cache: None,
             search_cursor: 0,
-            collapsed: HashSet::new(),
-            diff_maximized: false,
+            collapsed: saved.sidebar_collapsed.iter().cloned().collect(),
+            diff_maximized: saved.diff_maximized,
             avatars: Default::default(),
-            side_collapsed: HashSet::new(),
+            side_collapsed: ["details", "unstaged", "staged"]
+                .into_iter()
+                .filter(|k| saved.side_collapsed.iter().any(|s| s == k))
+                .collect(),
             sidebar_filter,
             sidebar_rows: Default::default(),
             sidebar_scrolls: (0..crate::sidebar::SECTION_COUNT)
@@ -376,6 +384,7 @@ impl RepoView {
     fn on_exit_maximized(&mut self, _: &ExitMaximizedDiff, _: &mut Window, cx: &mut Context<Self>) {
         if self.diff_maximized {
             self.diff_maximized = false;
+            self.save_layout(cx);
             cx.notify();
         } else {
             cx.propagate();
@@ -578,6 +587,27 @@ impl RepoView {
             });
         }
         cx.notify();
+    }
+
+    /// 把折叠与撑满状态写进设置,下次启动恢复。
+    pub(crate) fn save_layout(&self, cx: &mut Context<Self>) {
+        let sorted = |v: Vec<String>| {
+            let mut v = v;
+            v.sort();
+            v
+        };
+        let sidebar = sorted(self.collapsed.iter().cloned().collect());
+        let side = sorted(self.side_collapsed.iter().map(|k| k.to_string()).collect());
+        let maximized = self.diff_maximized;
+        if let Some(ws) = self.workspace.upgrade() {
+            ws.update(cx, |ws, cx| {
+                ws.update_settings(cx, |s| {
+                    s.sidebar_collapsed = sidebar;
+                    s.side_collapsed = side;
+                    s.diff_maximized = maximized;
+                })
+            });
+        }
     }
 
     fn save_panel_widths(&mut self, cx: &mut Context<Self>) {
