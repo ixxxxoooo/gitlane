@@ -591,8 +591,7 @@ impl RepoView {
             .flex_none()
             .p_3()
             .gap_2()
-            .border_t_1()
-            .border_color(theme.border)
+            // 不再加顶边框:上面最后一个面板自带底边框,两条叠在一起会变成 2px 的粗线
             .child(Textarea::new(&self.message).h(px(96.)))
             .child(
                 h_flex()
