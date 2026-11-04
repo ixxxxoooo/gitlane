@@ -2,12 +2,14 @@
 //!
 //! - `command`:写操作的统一描述与同步执行(可脱离 GPUI 测试);
 //! - `repo_model`:单仓库状态 Entity,负责后台加载、命令排队、撤销栈、文件监听防抖;
+//! - `update`:检查更新、下载校验、重启替换(走系统 curl,可脱离 GPUI 测试);
 //! - `workspace`:多仓库标签、设置、自动 fetch 与全局 git 配置。
 
 pub mod command;
 pub mod repo_model;
 pub mod search;
 pub mod settings;
+pub mod update;
 pub mod workspace;
 
 pub use command::Command;

@@ -1,0 +1,30 @@
+# 推送到 main 与拉取请求时:格式 + 零警告 clippy + 全工作区测试。
+# 工具链版本取自 rust-toolchain.toml。
+# @author ixxxxoooo
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+      - name: 工具链
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Git 身份(测试会建临时仓库并提交)
+        run: |
+          git config --global user.name "ci"
+          git config --global user.email "ci@example.com"
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked

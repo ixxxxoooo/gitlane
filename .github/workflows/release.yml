@@ -1,0 +1,55 @@
+# 推送形如 v0.2.0 的 tag 时,在 macOS 上构建 dmg 并创建 GitHub Release(附 appcast.json,供应用内更新读取)。
+# tag 版本号必须与根 Cargo.toml 的 workspace 版本一致,否则 appcast.sh 会报错。
+# @author ixxxxoooo
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # scripts/publish.sh 在本机已创建同名 Release 时整体跳过:不覆盖上传,
+      # 否则 appcast 与 dmg 可能来自两次不同的构建,sha256 对不上,应用内更新会拒绝安装
+      - name: 检查是否已发布
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            echo "Release 已存在(本机发布),跳过"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 工具链
+        if: steps.check.outputs.exists != 'true'
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        if: steps.check.outputs.exists != 'true'
+      - name: 打包 dmg 并生成 appcast
+        if: steps.check.outputs.exists != 'true'
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          VERSION="${TAG#v}"
+          scripts/bundle.sh --dmg
+          NOTES=$(git log -n 30 --pretty='%s' | paste -sd ';' -)
+          scripts/appcast.sh "$VERSION" "$TAG" "$REPO" "$NOTES"
+      - name: 发布 Release
+        if: steps.check.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # 本机发布先推 tag 再建 Release,开头检查时可能还没建好,构建完再查一次
+        run: |
+          TAG="${{ github.ref_name }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG 已在构建期间发布,跳过上传"
+          else
+            gh release create "$TAG" --title "Gitlane ${TAG#v}" --generate-notes --latest dist/Gitlane-*.dmg dist/appcast.json
+          fi

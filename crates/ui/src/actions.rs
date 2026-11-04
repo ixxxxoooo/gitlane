@@ -35,6 +35,8 @@ actions!(
         OpenSettings,
         OpenInTerminal,
         RevealInFinder,
+        CheckForUpdates,
+        InstallUpdate,
     ]
 );
 
@@ -108,5 +110,6 @@ pub fn palette_entries() -> Vec<(&'static str, &'static str, Box<dyn gpui::Actio
         ("切换统一 / 并排 diff", "⌘\\", Box::new(ToggleSplitDiff)),
         ("搜索提交", "⌘F", Box::new(FocusSearch)),
         ("聚焦提交信息", "⌘L", Box::new(FocusCommitMessage)),
+        ("检查更新…", "", Box::new(CheckForUpdates)),
     ]
 }

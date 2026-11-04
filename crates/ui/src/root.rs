@@ -5,6 +5,7 @@ use crate::palette::PaletteView;
 use crate::repo_view::RepoView;
 use crate::scan_dialog::ScanView;
 use crate::settings_view::SettingsView;
+use crate::updater::UpdateState;
 use app::{ThemePreference, Workspace};
 use gpui::base::Root;
 use gpui::component::button::{Button, ButtonVariants};
@@ -25,6 +26,8 @@ pub struct GitlaneWindow {
     applied_theme: ThemePreference,
     /// 已打开的设置窗口,再次打开时直接激活它。
     settings_window: Option<WindowHandle<Root>>,
+    /// 应用更新流程的状态,见 `updater.rs`。
+    pub(crate) update: UpdateState,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -66,6 +69,7 @@ impl GitlaneWindow {
             focus: cx.focus_handle(),
             applied_theme: theme,
             settings_window: None,
+            update: UpdateState::default(),
             _subscriptions: vec![sub, appearance],
         };
         this.sync_views(window, cx);
@@ -342,6 +346,7 @@ impl GitlaneWindow {
     }
 
     fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let update_badge = self.render_update_badge(cx);
         let ws = self.workspace.read(cx);
         let theme = cx.theme().clone();
         let active = ws.active;
@@ -411,6 +416,7 @@ impl GitlaneWindow {
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(ScanDirectory), cx)),
             )
             .child(div().flex_1())
+            .children(update_badge)
             .children(
                 ws.git_warning
                     .clone()
@@ -522,6 +528,8 @@ impl Render for GitlaneWindow {
             .on_action(cx.listener(Self::open_settings))
             .on_action(cx.listener(Self::open_in_terminal))
             .on_action(cx.listener(Self::reveal_in_finder))
+            .on_action(cx.listener(Self::on_check_for_updates))
+            .on_action(cx.listener(Self::on_install_update))
             .child(self.render_tabs(cx))
             .child(div().flex_1().min_h_0().child(content))
     }

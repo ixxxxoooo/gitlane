@@ -18,7 +18,8 @@ cargo run -p ui                             # 恢复上次打开的仓库
 cargo test --workspace                      # 全部测试(含无头 UI 测试)
 cargo clippy --workspace --all-targets      # 保持零警告
 cargo fmt --all
-./scripts/bundle.sh                         # release 构建并生成 dist/Gitlane.app
+./scripts/bundle.sh [--dmg]                 # release 构建并生成 dist/Gitlane.app(--dmg 另生成安装包)
+./scripts/publish.sh                        # 发版:打包、打 tag、推送、创建 GitHub Release
 ```
 
 日志:`RUST_LOG=debug cargo run -p ui -- …`,会打印每条执行的 git 命令和加载耗时。
@@ -52,6 +53,18 @@ scripts/     打包与测试数据脚本
    只改索引/工作区的命令要加进 `touches_history()` 的排除列表;
 3. `ui`:按钮或菜单项调用 `RepoView::run(Command::…)`;危险操作先用 `dialogs::confirm` 列出影响范围;
 4. 在 `gitcore/tests/repo_ops.rs` 加执行与撤销的测试。
+
+## 发版与应用内更新
+
+1. 改根 `Cargo.toml` 的 `[workspace.package] version`,按常规提交并推送(检查全部通过)。
+2. 运行 `scripts/publish.sh`(需要已登录的 `gh`):打包 dmg → 生成 `dist/appcast.json` → 打 `v<版本>` tag 并推送
+   → 创建 Release 并上传 dmg 与 appcast。也可以只推 tag,由 `release.yml` 在云端构建上传。
+3. 已安装的应用启动时和之后每 3 小时检查 `releases/latest/download/appcast.json`,发现新版本后台下载校验,
+   通知里点“重启更新”完成替换。设置里可关闭自动检查,菜单“检查更新…”可手动触发。
+
+实现:`app/src/update/`(检查、下载、校验、替换,可脱离 GPUI 测试)与 `ui/src/updater.rs`(状态与通知)。
+取舍见 [decisions/0006-self-update.md](decisions/0006-self-update.md)。开发构建(`cargo run`、开发实例)构建号为 0,
+不会自动检查,也不是从 `.app` 运行,所以不能自动替换。
 
 ## 新增一个动作 / 快捷键
 

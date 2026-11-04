@@ -26,7 +26,8 @@
 scripts/dev-restart.sh                  # 构建并(重新)启动开发实例
 cargo run -p ui -- ~/code/some-repo     # 开发运行
 cargo test --workspace                  # 全部测试
-./scripts/bundle.sh                     # 生成 dist/Gitlane.app
+./scripts/bundle.sh                     # 生成 dist/Gitlane.app(--dmg 另生成安装包)
+./scripts/publish.sh                    # 发版:打 tag、推送、创建 GitHub Release,应用内自动更新
 cp -R dist/Gitlane.app /Applications/
 ```
 

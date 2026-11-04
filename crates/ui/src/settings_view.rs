@@ -161,6 +161,20 @@ impl SettingsView {
                     )
                     .description("关闭后启动时显示欢迎页;命令行传入的仓库总会打开。"),
                 ),
+                SettingGroup::new().title("更新").item(
+                    SettingItem::new(
+                        "自动检查更新",
+                        switch(
+                            ws,
+                            true,
+                            |s| s.auto_update_check,
+                            |s, v| s.auto_update_check = v,
+                        ),
+                    )
+                    .description(
+                        "启动时和之后每 3 小时检查一次;发现新版本后台下载并校验,重启更新由你确认。也可以在菜单里手动“检查更新…”。",
+                    ),
+                ),
                 SettingGroup::new().title("同步").item(
                     SettingItem::new(
                         "自动 fetch",

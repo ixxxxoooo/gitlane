@@ -23,6 +23,7 @@ mod sidebar;
 mod tests;
 #[cfg(test)]
 mod tests_panels;
+mod updater;
 
 use actions::*;
 use gpui::*;
@@ -34,6 +35,7 @@ fn menus() -> Vec<Menu> {
         Menu {
             name: "Gitlane".into(),
             items: vec![
+                MenuItem::action("检查更新…", CheckForUpdates),
                 MenuItem::action("设置…", OpenSettings),
                 MenuItem::separator(),
                 MenuItem::action("命令面板", CommandPalette),
@@ -122,11 +124,15 @@ fn main() {
                 ..Default::default()
             };
             let initial = initial.clone();
-            gpui::open_window(options, cx, move |window, cx| {
+            let (handle, root) = gpui::open_window(options, cx, move |window, cx| {
                 let workspace = cx.new(app::Workspace::load);
                 cx.new(|cx| GitlaneWindow::new(workspace, initial, window, cx))
             })
             .expect("无法打开窗口");
+            // 更新检查会联网,只在正式启动时触发,测试里的窗口不触发
+            let _ = handle.update(cx, |_, window, cx| {
+                root.update(cx, |this, cx| this.startup_update(window, cx))
+            });
             cx.activate(true);
         });
 }

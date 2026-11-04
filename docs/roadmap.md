@@ -69,6 +69,7 @@
 | 项目 | 状态 |
 |---|---|
 | 本机打包 `.app`(`scripts/bundle.sh`) | ✅ |
+| 应用内更新(检查 / 后台下载校验 / 重启替换)与发版(`scripts/publish.sh`、tag 触发的 release 流水线、CI) | ☑️ 检查、比较、暂存、失败记录有自动化测试;真实下载与替换需发一次版手工验证,见 testing.md;选型见 [0006](decisions/0006-self-update.md) |
 | App 图标 | ☑️ 提交图泳道图形,浅色 / 深色两版;打包用 `assets/icon/Gitlane.icns`,运行中 Dock 图标随主题切换(源文件与生成脚本在 `assets/icon/`) |
 | 设置窗口(⌘,) | ✅ 通用(主题含跟随系统、恢复标签、自动 fetch 间隔)、Git(全局 user.name / user.email、pull 方式、commit.gpgsign、init.defaultBranch)、提交图与 Diff(提交上限、默认并排、上下文行数)、集成(终端应用,⌥⌘T 在终端中打开、⌥⌘R 在 Finder 中显示)。界面细节见 testing.md 手工清单 |
 | 亮色 / 暗色主题切换并记住 | ✅ 另可在设置里选“跟随系统” |

@@ -62,6 +62,8 @@ pub struct Settings {
     /// 后台自动 fetch 的间隔(分钟),0 表示关闭。
     pub auto_fetch_minutes: u32,
     pub terminal: TerminalApp,
+    /// 启动时(之后每 3 小时)检查更新,发现新版本后台下载并校验;重启更新由用户确认。
+    pub auto_update_check: bool,
     /// 左侧引用树宽度(逻辑像素),拖动分隔条调整;窗口缩放不改变它。
     pub sidebar_width: f32,
     /// 右侧详情与暂存区宽度。
@@ -80,6 +82,7 @@ impl Default for Settings {
             restore_tabs: true,
             auto_fetch_minutes: 0,
             terminal: TerminalApp::Terminal,
+            auto_update_check: true,
             sidebar_width: 240.,
             side_panel_width: 360.,
         }
@@ -146,6 +149,7 @@ mod tests {
         assert_eq!(s.diff_context_lines, 3);
         assert_eq!(s.auto_fetch_minutes, 0);
         assert_eq!(s.terminal, TerminalApp::Terminal);
+        assert!(s.auto_update_check, "旧设置没有这个键,默认自动检查更新");
     }
 
     #[test]
