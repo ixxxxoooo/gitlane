@@ -70,6 +70,8 @@ pub struct Settings {
     pub sidebar_width: f32,
     /// 右侧详情与暂存区宽度。
     pub side_panel_width: f32,
+    /// diff 区域占中间栏高度的比例,拖动提交图与 diff 之间的分隔条调整。
+    pub diff_ratio: f32,
 }
 
 impl Default for Settings {
@@ -88,6 +90,7 @@ impl Default for Settings {
             fetch_avatars: true,
             sidebar_width: 240.,
             side_panel_width: 360.,
+            diff_ratio: 0.5,
         }
     }
 }
@@ -154,6 +157,7 @@ mod tests {
         assert_eq!(s.terminal, TerminalApp::Terminal);
         assert!(s.auto_update_check, "旧设置没有这个键,默认自动检查更新");
         assert!(s.fetch_avatars, "旧设置没有这个键,默认联网获取头像");
+        assert_eq!(s.diff_ratio, 0.5, "旧设置没有这个键,diff 默认占一半高度");
     }
 
     #[test]

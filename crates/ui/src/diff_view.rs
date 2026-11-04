@@ -341,7 +341,8 @@ impl RepoView {
             .gap_2()
             .border_b_1()
             .border_color(theme.border)
-            .bg(theme.secondary)
+            // 标题栏底色比 secondary 浅很多,压住存在感,让代码行更突出
+            .bg(theme.secondary.opacity(0.35))
             .child(crate::file_icons::file_icon(path, &theme).xsmall())
             .child(
                 h_flex()
@@ -352,7 +353,7 @@ impl RepoView {
                     .child(
                         div()
                             .flex_none()
-                            .font_weight(FontWeight::SEMIBOLD)
+                            .font_weight(FontWeight::MEDIUM)
                             .child(name),
                     )
                     .children(dir.map(|d| {
@@ -427,13 +428,34 @@ impl RepoView {
                 }),
         )
         .child(
+            Button::new("maximize-diff")
+                .xsmall()
+                .ghost()
+                .icon(Icon::from(if self.diff_maximized {
+                    gpui::assets::IconName::Minimize2
+                } else {
+                    gpui::assets::IconName::Maximize2
+                }))
+                .tooltip(if self.diff_maximized {
+                    "还原(显示提交图)"
+                } else {
+                    "撑满中间区域"
+                })
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.diff_maximized = !this.diff_maximized;
+                    cx.notify();
+                })),
+        )
+        .child(
             Button::new("close-diff")
                 .xsmall()
                 .ghost()
                 .icon(gpui::component::IconName::Close)
-                .on_click(
-                    cx.listener(|this, _, _, cx| this.repo.update(cx, |r, cx| r.close_diff(cx))),
-                ),
+                .on_click(cx.listener(|this, _, _, cx| {
+                    // 关掉 diff 时一并还原撑满状态,下次打开仍是上下分栏
+                    this.diff_maximized = false;
+                    this.repo.update(cx, |r, cx| r.close_diff(cx))
+                })),
         )
     }
 

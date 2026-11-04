@@ -3,7 +3,7 @@
 
 use crate::actions::*;
 use crate::diff_view::DiffCache;
-use crate::panels::{self, PanelDrag, PanelSide};
+use crate::panels::{self, DiffDrag, PanelDrag, PanelSide};
 use app::{Command, NoticeKind, RepoEvent, RepoModel, Selection, Workspace};
 use gitcore::RepoState;
 use gitcore::ops::ResetMode;
@@ -34,6 +34,8 @@ pub struct RepoView {
     /// 搜索结果中当前定位到第几个。
     pub(crate) search_cursor: usize,
     pub(crate) collapsed: HashSet<String>,
+    /// diff 区域是否撑满中间栏(隐藏提交图),方便看大段对比。
+    pub(crate) diff_maximized: bool,
     /// 作者头像缓存:邮箱 → 本地头像文件(`None` 表示没有头像或还没查到)。
     pub(crate) avatars: std::collections::HashMap<String, Option<std::path::PathBuf>>,
     /// 右栏收起的面板("details" / "unstaged" / "staged")。
@@ -104,6 +106,7 @@ impl RepoView {
             diff_cache: None,
             search_cursor: 0,
             collapsed: HashSet::new(),
+            diff_maximized: false,
             avatars: Default::default(),
             side_collapsed: HashSet::new(),
             sidebar_filter,
@@ -542,6 +545,31 @@ impl RepoView {
         cx.notify();
     }
 
+    /// 拖动提交图与 diff 之间的分隔条:鼠标位置换算成 diff 高度比例,只改内存,松手时写盘。
+    fn on_diff_drag(&mut self, e: &DragMoveEvent<DiffDrag>, cx: &mut Context<Self>) {
+        let b = e.bounds;
+        let ratio = panels::dragged_diff_ratio(
+            f32::from(b.bottom() - e.event.position.y),
+            f32::from(b.size.height),
+        );
+        if let Some(ws) = self.workspace.upgrade() {
+            ws.update(cx, |ws, cx| {
+                ws.settings.diff_ratio = ratio;
+                cx.notify();
+            });
+        }
+        cx.notify();
+    }
+
+    fn reset_diff_ratio(&mut self, cx: &mut Context<Self>) {
+        if let Some(ws) = self.workspace.upgrade() {
+            ws.update(cx, |ws, cx| {
+                ws.update_settings(cx, |s| s.diff_ratio = panels::DIFF_RATIO_DEFAULT)
+            });
+        }
+        cx.notify();
+    }
+
     fn save_panel_widths(&mut self, cx: &mut Context<Self>) {
         if let Some(ws) = self.workspace.upgrade() {
             ws.update(cx, |ws, cx| ws.update_settings(cx, |_| {}));
@@ -845,21 +873,48 @@ impl Render for RepoView {
                     .on_drop(cx.listener(|this, _: &PanelDrag, _, cx| this.save_panel_widths(cx)))
                     .child(sidebar)
                     .child(self.panel_handle("resize-left", PanelSide::Left, cx))
-                    .child(
+                    .child({
+                        let ratio = self
+                            .workspace
+                            .upgrade()
+                            .map_or(panels::DIFF_RATIO_DEFAULT, |ws| {
+                                panels::clamp_diff_ratio(ws.read(cx).settings.diff_ratio)
+                            });
+                        let maximized = self.diff_maximized && diff.is_some();
+                        let handle = panels::row_handle("resize-diff", theme.border, theme.primary)
+                            .on_click(cx.listener(|this, e: &ClickEvent, _, cx| {
+                                // 双击恢复默认比例
+                                if e.click_count() >= 2 {
+                                    this.reset_diff_ratio(cx);
+                                }
+                            }))
+                            .test_support();
                         v_flex()
                             .flex_1()
                             .min_w_0()
                             .h_full()
-                            .child(div().flex_1().min_h_0().child(graph))
+                            .on_drag_move(cx.listener(
+                                |this, e: &DragMoveEvent<DiffDrag>, _, cx| this.on_diff_drag(e, cx),
+                            ))
+                            .on_drop(
+                                cx.listener(|this, _: &DiffDrag, _, cx| this.save_panel_widths(cx)),
+                            )
+                            // 撑满时不渲染提交图;否则提交图占剩余高度,diff 按比例取高度
+                            .when(!maximized, |d| {
+                                d.child(div().flex_1().min_h_0().child(graph))
+                            })
+                            .when(diff.is_some() && !maximized, |d| d.child(handle))
                             .children(diff.map(|d| {
                                 div()
-                                    .flex_1()
+                                    .id("diff-panel")
+                                    .test_support()
+                                    .when(maximized, |x| x.flex_1())
+                                    .when(!maximized, |x| x.h(relative(ratio)).flex_none())
                                     .min_h_0()
-                                    .border_t_1()
-                                    .border_color(theme.border)
+                                    .when(maximized, |x| x.border_t_1().border_color(theme.border))
                                     .child(d)
-                            })),
-                    )
+                            }))
+                    })
                     .child(self.panel_handle("resize-right", PanelSide::Right, cx))
                     .child(side),
             )

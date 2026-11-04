@@ -28,6 +28,8 @@ gpui::assets::icon_assets!(
         GitGraph,
         Hash,
         Laptop,
+        Maximize2,
+        Minimize2,
         Minus,
         Plus,
         Tag,

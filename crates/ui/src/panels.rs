@@ -14,6 +14,52 @@ pub enum PanelSide {
     Right,
 }
 
+/// 提交图与 diff 之间的横向分隔条拖拽数据。
+#[derive(Clone, Copy, Debug)]
+pub struct DiffDrag;
+
+/// diff 区域高度占中间栏的比例范围:上下都至少留出一部分。
+pub const DIFF_RATIO_RANGE: (f32, f32) = (0.15, 0.85);
+pub const DIFF_RATIO_DEFAULT: f32 = 0.5;
+
+/// 把比例限制在合理范围内;非法值(NaN、旧设置里的 0)回到默认值。
+pub fn clamp_diff_ratio(ratio: f32) -> f32 {
+    if !ratio.is_finite() || ratio <= 0. {
+        return DIFF_RATIO_DEFAULT;
+    }
+    ratio.clamp(DIFF_RATIO_RANGE.0, DIFF_RATIO_RANGE.1)
+}
+
+/// 拖动时由鼠标位置算出 diff 的高度比例。`from_bottom` 是鼠标到中间栏底边的距离,`total` 是中间栏高度。
+pub fn dragged_diff_ratio(from_bottom: f32, total: f32) -> f32 {
+    if total <= 0. {
+        return DIFF_RATIO_DEFAULT;
+    }
+    clamp_diff_ratio(from_bottom / total)
+}
+
+/// 横向分隔条:中间一条细线,悬停或拖动时高亮。
+pub fn row_handle(id: &'static str, line: Hsla, hover: Hsla) -> Stateful<Div> {
+    div()
+        .id(id)
+        .h(px(HANDLE_WIDTH))
+        .w_full()
+        .flex_none()
+        .flex()
+        .flex_col()
+        .justify_center()
+        .cursor(CursorStyle::ResizeRow)
+        .group(id)
+        .child(
+            div()
+                .h(px(1.))
+                .w_full()
+                .bg(line)
+                .group_hover(id, |s| s.h(px(2.)).bg(hover)),
+        )
+        .on_drag(DiffDrag, |_, _, _, cx| cx.new(|_| EmptyView))
+}
+
 /// 拖动中的分隔条,作为 GPUI 拖拽数据。
 #[derive(Clone, Copy, Debug)]
 pub struct PanelDrag(pub PanelSide);
@@ -105,7 +151,10 @@ pub fn handle(id: &'static str, side: PanelSide, line: Hsla, hover: Hsla) -> Sta
 
 #[cfg(test)]
 mod tests {
-    use super::{LEFT_DEFAULT, MIN_CENTER, PanelSide, RIGHT_DEFAULT, dragged_width, layout};
+    use super::{
+        LEFT_DEFAULT, MIN_CENTER, PanelSide, RIGHT_DEFAULT, clamp_diff_ratio, dragged_diff_ratio,
+        dragged_width, layout,
+    };
 
     #[test]
     fn widths_stay_fixed_while_window_resizes() {
@@ -140,5 +189,17 @@ mod tests {
         // 中间至少留 MIN_CENTER:1200 - 360 - 10 - 360 = 470
         assert_eq!(dragged_width(PanelSide::Left, 500., 1200., 360.), 470.);
         assert_eq!(dragged_width(PanelSide::Right, 900., 2400., 240.), 720.);
+    }
+
+    #[test]
+    fn diff_ratio_is_clamped_and_follows_the_mouse() {
+        assert_eq!(clamp_diff_ratio(0.), 0.5);
+        assert_eq!(clamp_diff_ratio(f32::NAN), 0.5);
+        assert_eq!(clamp_diff_ratio(0.01), 0.15);
+        assert_eq!(clamp_diff_ratio(0.99), 0.85);
+        // 鼠标离底边 300px、中间栏 1000px 高:diff 占 30%
+        assert_eq!(dragged_diff_ratio(300., 1000.), 0.3);
+        assert_eq!(dragged_diff_ratio(990., 1000.), 0.85);
+        assert_eq!(dragged_diff_ratio(5., 0.), 0.5);
     }
 }

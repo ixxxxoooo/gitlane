@@ -195,3 +195,60 @@ async fn commit_box_stays_at_the_bottom_when_panels_collapse(cx: &mut TestAppCon
         "收起后提交框仍在最底部:{panel:?} {boxed:?}"
     );
 }
+
+#[gpui::test]
+async fn diff_height_follows_ratio_and_can_be_maximized(cx: &mut TestAppContext) {
+    let dir = fixture();
+    let (handle, root) = open(cx, dir.path());
+    let r = repo(&root, cx);
+    cx.wait_for(handle.into(), TIMEOUT, move |_, cx| {
+        let m = r.read(cx);
+        m.data.is_some() && m.status.is_some()
+    })
+    .await;
+    // 打开一个文件的 diff
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        window.click("u-main.rs", cx);
+    })
+    .unwrap();
+    let r = repo(&root, cx);
+    cx.wait_for(handle.into(), TIMEOUT, move |_, cx| {
+        r.read(cx).diff.is_some()
+    })
+    .await;
+
+    let diff_h = |cx: &mut TestAppContext| {
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.render_frame(cx);
+            f32::from(window.find("diff-panel").bounds().size.height)
+        })
+        .unwrap()
+    };
+    // 比例 0.5 与 0.25:diff 高度跟着变,且 0.25 时更矮
+    let ws = cx.update(|cx| root.read(cx).workspace().clone());
+    cx.update(|cx| ws.update(cx, |w, cx| w.update_settings(cx, |s| s.diff_ratio = 0.5)));
+    let half = diff_h(cx);
+    cx.update(|cx| ws.update(cx, |w, cx| w.update_settings(cx, |s| s.diff_ratio = 0.25)));
+    let quarter = diff_h(cx);
+    assert!(
+        quarter < half * 0.7,
+        "比例变小 diff 变矮:{half} -> {quarter}"
+    );
+
+    // 撑满:提交图消失,diff 比原来高;再点一次还原
+    let has_graph = |cx: &mut TestAppContext| {
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.render_frame(cx);
+            window.try_find("working-changes").is_some()
+        })
+        .unwrap()
+    };
+    assert!(has_graph(cx));
+    click(handle, "maximize-diff", cx);
+    assert!(!has_graph(cx), "撑满时不显示提交图");
+    let full = diff_h(cx);
+    assert!(full > half, "撑满后更高:{full} vs {half}");
+    click(handle, "maximize-diff", cx);
+    assert!(has_graph(cx), "再点一次还原");
+}
