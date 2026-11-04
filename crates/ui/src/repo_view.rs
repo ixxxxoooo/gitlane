@@ -69,7 +69,10 @@ impl RepoView {
         let message = cx.new(|cx| TextareaState::new(window, cx).placeholder("提交信息(⌘↵ 提交)"));
 
         let diff_state = cx.new(|cx| {
-            gpui::component::diff::DiffState::new(Vec::new(), cx).with_context_lines(None)
+            // 不做词级强调:组件按“词”比较,中文每个字算一个词,两行注释会被切成忽深忽浅的碎片
+            gpui::component::diff::DiffState::new(Vec::new(), cx)
+                .with_context_lines(None)
+                .with_inline_unit(None)
         });
         let subscriptions = vec![
             cx.subscribe(

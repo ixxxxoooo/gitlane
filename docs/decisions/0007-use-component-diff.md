@@ -33,6 +33,8 @@ diff 区域改用 `gpui::component::diff::{Diff, DiffState}`。
 - 没有 minimap(组件自带滚动条);
 - hunk 标记位只放得下一个按钮,只保留暂存 / 取消暂存;“丢弃整个 hunk”改为选中行后用“丢弃选中行”;
 - 配色改用组件的主题色,不再是自定义的浅粉 / 浅绿;
+- 关闭了词级强调(`with_inline_unit(None)`):组件按 Unicode 词比较、相似度阈值写死 25%,
+  中文每个字算一个词,配对的两行注释会被切成忽深忽浅的碎片;现在只有整行红绿底;
 - 语法高亮由“从完整文件开头解析”退回“按 hunk 的一侧解析”:hunk 起点落在多行注释、
   模板字符串或 Vue 的 `<template>` / `<script>` 中间时,高亮可能不准。
   原先按完整文件算高亮的后台任务(`highlight_diff`、`side_texts`、`DiffState.syntax`)已一并删除;
