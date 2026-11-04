@@ -23,6 +23,10 @@
 - 改动最小化、保持上游结构,便于对照;本项目“单文件 ≤ 300 行”的规则不适用于 fork 代码。
 - 已做:界面文字换成中文(`i18n.rs`);去掉内置 tree-sitter 高亮路径(我们总是注入 syntect);
   按键上下文改名为 `GitlaneDiff`、动作命名空间改为 `gitlane_diff`,避免与原版快捷键冲突。
+- 不换行时按编辑器的方式布局(`lib.rs` 里标了“Gitlane 改动”):每栏宽度跟可视区,并排各占一半;
+  行号栏固定,代码在栏内裁剪、按共享的横向偏移平移。外层滚动容器只用来记录偏移和可滚范围
+  (列表加宽 `scroll_range`、再右移 `scroll_x` 抵消外层平移)。选区按同一个偏移换算,不受影响。
+  统一视图同样处理,横向滚动时行号不再被带走。测试见 `layout_tests.rs`;
 - 新增直接依赖 `smallvec`、`unicode-segmentation`、`unicode-width`:上游模块原本就用,
   已在依赖树里(gpui-component 的依赖),不引入新下载。
 - 上游的单元测试依赖 gpui-component 内部的测试设施,没有搬过来;改动处补本 crate 自己的测试。

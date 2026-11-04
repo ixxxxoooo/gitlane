@@ -13,3 +13,6 @@ similar.workspace = true
 smallvec = "1"
 unicode-segmentation = "1"
 unicode-width = "0.2"
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

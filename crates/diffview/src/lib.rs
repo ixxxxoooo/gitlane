@@ -28,6 +28,8 @@ macro_rules! t {
 }
 
 mod i18n;
+#[cfg(test)]
+mod layout_tests;
 // 上游说明:Readonly, virtualized patch display inspired by Diffs from Pierre.
 // Parse an externally supplied patch into [`DiffFile`]s, retain one
 // [`DiffState`] for all of them in the owner, and build [`Diff`] during rendering.
@@ -586,11 +588,25 @@ fn render_diff(
         state.set_content_width(width);
     }
     state.sync_annotations(&props.annotations.items);
-    let content_width = state.content_width().max(state.viewport().width);
-    let column_width = if mode == DiffMode::Split {
-        content_width / 2.
+    // Gitlane 改动:不换行时按编辑器的方式布局。每栏宽度跟着可视区(并排各占一半),行号栏固定,
+    // 代码在栏内裁剪并按共享的横向偏移平移;外层滚动容器只负责记录偏移和可滚范围。
+    // 上游是把整张列表按“全文件最长行”铺开再整体平移,有长行时并排的新版本一栏会被挤出屏幕。
+    let viewport = state.viewport().width;
+    let clip = !soft_wrap && viewport > px(0.);
+    let columns = if mode == DiffMode::Split { 2. } else { 1. };
+    let (content_width, column_width, scroll_range) = if clip {
+        let column = viewport / columns;
+        let range = (state.content_width() / columns - column).max(px(0.));
+        (viewport, column, range)
     } else {
-        content_width
+        let width = state.content_width().max(viewport);
+        (width, width / columns, px(0.))
+    };
+    // 滚动句柄的偏移是负数(向左滚动的距离取负)
+    let scroll_x = if clip {
+        (-state.horizontal_scroll().offset().x).clamp(px(0.), scroll_range)
+    } else {
+        px(0.)
     };
     let code = Rc::new(CodePresentation {
         files: state.files().to_vec(),
@@ -598,6 +614,8 @@ fn render_diff(
         mode,
         content_width,
         column_width,
+        clip,
+        scroll_x,
         font_size,
         row_height,
         gutter_width,
@@ -660,7 +678,10 @@ fn render_diff(
                             .child(render_row(row, code.clone(), window, cx))
                             .into_any_element()
                     })
-                    .w(content_width)
+                    // 宽出的 scroll_range 让滚动句柄有可滚范围;再右移 scroll_x 抵消外层平移,
+                    // 行与行号栏原地不动,只有各栏里的代码自己平移
+                    .w(content_width + scroll_range)
+                    .when(clip, |this| this.relative().left(scroll_x))
                     .h_full(),
                 ))
                 .into_any_element(),
@@ -845,6 +866,9 @@ struct CodePresentation {
     mode: DiffMode,
     content_width: Pixels,
     column_width: Pixels,
+    /// 不换行的编辑器式布局:栏宽跟可视区,代码在栏内裁剪并平移 `scroll_x`。
+    clip: bool,
+    scroll_x: Pixels,
     font_size: Pixels,
     row_height: Pixels,
     gutter_width: Pixels,
@@ -1739,6 +1763,7 @@ fn code_line(
                 this.flex().flex_row().flex_shrink_0()
             }
         })
+        .when(code.clip, |this| this.relative().left(-code.scroll_x))
         .children(ranges.into_iter().enumerate().map(|(chunk_ix, range)| {
             CodeText::new(
                 ("code", chunk_ix).into(),
@@ -1872,6 +1897,8 @@ fn code_line(
                 .map(|this| {
                     if code.soft_wrap {
                         this.flex_1().min_w_0()
+                    } else if code.clip {
+                        this.flex_1().min_w_0().overflow_hidden()
                     } else {
                         this.flex_shrink_0()
                     }
