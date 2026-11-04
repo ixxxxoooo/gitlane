@@ -34,10 +34,9 @@ impl RepoView {
                 .items_center()
                 .justify_center()
                 .text_color(theme.muted_foreground)
-                .child(if repo.load_error.is_some() {
-                    "加载失败"
-                } else {
-                    "正在加载提交历史…"
+                .child(match &repo.load_error {
+                    Some(e) => format!("加载失败:{e}"),
+                    None => "正在加载提交历史…".to_string(),
                 })
                 .into_any_element();
         };

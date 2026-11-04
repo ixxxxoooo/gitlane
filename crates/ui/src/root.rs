@@ -408,6 +408,8 @@ impl GitlaneWindow {
                     Button::new(("close-tab", i))
                         .xsmall()
                         .ghost()
+                        // 按钮自带内边距,负外边距把它和名字之间的空隙收紧
+                        .ml(px(-5.))
                         .icon(IconName::Close)
                         .invisible()
                         .group_hover(group.clone(), |s| s.visible())

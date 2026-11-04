@@ -623,6 +623,7 @@ impl RepoView {
         let busy = repo.busy.is_some();
         // 正在执行的是哪个工具栏动作:那个按钮自己转圈(替换图标、保持可见),其余按钮置灰
         let running = repo.busy.as_ref().map(|b| b.action);
+        let cancellable = repo.busy.as_ref().is_some_and(|b| b.cancel.is_some());
         let spin = |a: app::BusyAction| running == Some(a);
         let (undo_label, redo_label) = (
             repo.undo.peek_undo().map(|e| format!("撤销:{}", e.label)),
@@ -773,6 +774,18 @@ impl RepoView {
                         this.run(Command::StashPush { message: None }, cx)
                     })),
             )
+            // 联网操作(fetch / pull / push)进行中才出现,点一下取消
+            .children(cancellable.then(|| {
+                Button::new("cancel")
+                    .small()
+                    .ghost()
+                    .icon(IconName::Close)
+                    .label("取消")
+                    .tooltip("取消正在进行的联网操作")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.repo.update(cx, |r, cx| r.cancel_running(cx))
+                    }))
+            }))
             .child(div().flex_1())
             .child(
                 div()
@@ -822,47 +835,6 @@ impl RepoView {
                 ),
         )
     }
-
-    fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let repo = self.repo.read(cx);
-        let theme = cx.theme().clone();
-        let mut left = h_flex().gap_2().flex_1().overflow_hidden();
-        if let Some(busy) = &repo.busy {
-            left = left
-                .child(gpui::component::spinner::Spinner::new().xsmall())
-                .child(busy.label.clone());
-            if busy.cancel.is_some() {
-                left = left.child(
-                    Button::new("cancel")
-                        .xsmall()
-                        .ghost()
-                        .label("取消")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.repo.update(cx, |r, cx| r.cancel_running(cx))
-                        })),
-                );
-            }
-        } else if let Some(err) = &repo.load_error {
-            left = left.text_color(theme.danger).child(err.clone());
-        }
-        let right = repo.data.as_ref().map(|d| {
-            let n = d.history.commits.len();
-            format!(
-                "{n}{} 个提交 · 加载 {} ms",
-                if d.history.truncated { "+" } else { "" },
-                d.load_time.as_millis()
-            )
-        });
-        h_flex()
-            .h(px(24.))
-            .px_2()
-            .text_xs()
-            .text_color(theme.muted_foreground)
-            .border_t_1()
-            .border_color(theme.border)
-            .child(left)
-            .children(right)
-    }
 }
 
 impl Focusable for RepoView {
@@ -882,7 +854,6 @@ impl Render for RepoView {
         let graph = self.render_graph(window, cx);
         let diff = has_diff.then(|| self.render_diff(window, cx));
         let side = self.render_side_panel(px(right_w), window, cx);
-        let status = self.render_status_bar(cx);
 
         v_flex()
             .key_context(REPO_CONTEXT)
@@ -966,6 +937,5 @@ impl Render for RepoView {
                     .child(self.panel_handle("resize-right", PanelSide::Right, cx))
                     .child(side),
             )
-            .child(status)
     }
 }
