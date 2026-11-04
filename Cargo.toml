@@ -1,0 +1,36 @@
+[workspace]
+resolver = "3"
+members = ["crates/gitcore", "crates/graph", "crates/app", "crates/ui"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+gitcore = { path = "crates/gitcore" }
+graph = { path = "crates/graph" }
+app = { path = "crates/app" }
+
+# GPUI 没有 1.0,固定到精确版本;升级单独排期(见 docs/decisions/0002-pin-gpui.md)
+gpui = { package = "gpui-kit", version = "=0.9.0" }
+
+git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
+anyhow = "1"
+thiserror = "2"
+notify = "8"
+tempfile = "3"
+similar = "2"
+log = "0.4"
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+env_logger = "0.11"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.dev.package."*"]
+opt-level = 2

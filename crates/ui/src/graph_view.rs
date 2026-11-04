@@ -1,0 +1,348 @@
+//! 提交图:固定行高、虚拟滚动,只渲染可见行。最上方固定一行 Working changes。
+
+use crate::format;
+use crate::graph_canvas::{graph_cell, graph_width};
+use crate::repo_view::RepoView;
+use app::{Command, Selection};
+use gitcore::ops::ResetMode;
+use gitcore::{Oid, RefKind};
+use gpui::base::TestSupportExt as _;
+use gpui::component::menu::{ContextMenuExt, PopupMenuItem};
+use gpui::component::{ActiveTheme, h_flex, v_flex};
+use gpui::prelude::*;
+use gpui::*;
+use std::collections::HashSet;
+
+pub const ROW_HEIGHT: f32 = 26.;
+
+impl RepoView {
+    pub(crate) fn render_graph(
+        &mut self,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let repo = self.repo.read(cx);
+        let theme = cx.theme().clone();
+        let Some(data) = repo.data.clone() else {
+            return v_flex()
+                .size_full()
+                .items_center()
+                .justify_center()
+                .text_color(theme.muted_foreground)
+                .child(if repo.load_error.is_some() {
+                    "加载失败"
+                } else {
+                    "正在加载提交历史…"
+                })
+                .into_any_element();
+        };
+        let count = data.history.commits.len();
+        let columns = data.graph.max_columns().min(24);
+        let working_count = repo.status.as_ref().map_or(0, |s| s.entries.len());
+        let working_selected = repo.selection == Selection::WorkingChanges;
+
+        let working_row = h_flex()
+            .id("working-changes")
+            .h(px(ROW_HEIGHT))
+            .px_2()
+            .gap_2()
+            .text_sm()
+            .border_b_1()
+            .border_color(theme.border)
+            .cursor_pointer()
+            .when(working_selected, |d| d.bg(theme.list_active))
+            .hover(|s| s.bg(theme.list_hover))
+            .child(
+                div()
+                    .w(graph_width(columns))
+                    .flex_none()
+                    .flex()
+                    .justify_center()
+                    .child(
+                        div()
+                            .size(px(9.))
+                            .rounded_full()
+                            .border_2()
+                            .border_color(theme.muted_foreground),
+                    ),
+            )
+            .child(
+                div()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("Working changes"),
+            )
+            .child(
+                div()
+                    .text_color(theme.muted_foreground)
+                    .child(if working_count == 0 {
+                        "无改动".to_string()
+                    } else {
+                        format!("{working_count} 个文件")
+                    }),
+            )
+            .on_click(
+                cx.listener(|this, _, _, cx| this.repo.update(cx, |r, cx| r.select_working(cx))),
+            )
+            .test_support();
+
+        let list = uniform_list(
+            "commit-graph",
+            count,
+            cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                this.render_commit_rows(range, cx)
+            }),
+        )
+        .track_scroll(&self.graph_scroll)
+        .flex_1()
+        .min_h_0();
+
+        let mut col = v_flex()
+            .key_context("CommitGraph")
+            .track_focus(&self.graph_focus)
+            .size_full()
+            .child(working_row)
+            .child(list);
+        if data.history.truncated {
+            col = col.child(
+                div()
+                    .px_2()
+                    .py_1()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(format!("只加载了最近 {count} 个提交")),
+            );
+        }
+        col.on_action(
+            cx.listener(|this, a: &CommitAction, window, cx| this.on_commit_action(a, window, cx)),
+        )
+        .into_any_element()
+    }
+
+    fn render_commit_rows(
+        &mut self,
+        range: std::ops::Range<usize>,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        let repo = self.repo.read(cx);
+        let Some(data) = repo.data.clone() else {
+            return Vec::new();
+        };
+        let theme = cx.theme().clone();
+        let dark = theme.is_dark();
+        let selected = match repo.selection {
+            Selection::Commit(oid) => Some(oid),
+            Selection::WorkingChanges => None,
+        };
+        let head_oid = data.refs.head.oid();
+        let searching = !repo.search_query.trim().is_empty();
+        let hits: HashSet<usize> = if searching {
+            repo.search_hits.iter().copied().collect()
+        } else {
+            HashSet::new()
+        };
+        let columns = data.graph.max_columns().min(24);
+        let now = format::now();
+
+        range
+            .map(|row| {
+                let c = &data.history.commits[row];
+                let oid = c.id;
+                let is_selected = selected == Some(oid);
+                let dimmed = searching && !hits.contains(&row);
+                let badges = data.badges.get(&oid).map(|ix| {
+                    ix.iter()
+                        .map(|&i| {
+                            let r = &data.refs.refs[i];
+                            let (bg, fg) = match r.kind {
+                                RefKind::Local if r.is_head => {
+                                    (theme.primary, theme.primary_foreground)
+                                }
+                                RefKind::Local => (theme.accent, theme.accent_foreground),
+                                RefKind::Remote => (theme.secondary, theme.muted_foreground),
+                                RefKind::Tag => (theme.yellow_light, theme.yellow),
+                            };
+                            div()
+                                .px_1()
+                                .rounded_sm()
+                                .text_xs()
+                                .bg(bg)
+                                .text_color(fg)
+                                .when(r.kind == RefKind::Tag, |d| {
+                                    d.border_1().border_color(theme.yellow)
+                                })
+                                .child(r.short.clone())
+                        })
+                        .collect::<Vec<_>>()
+                });
+
+                h_flex()
+                    .id(("commit", row))
+                    .h(px(ROW_HEIGHT))
+                    .pr_2()
+                    .gap_2()
+                    .text_sm()
+                    .when(is_selected, |d| d.bg(theme.list_active))
+                    .when(!is_selected, |d| d.hover(|s| s.bg(theme.list_hover)))
+                    .when(dimmed, |d| d.opacity(0.35))
+                    .child(div().flex_none().h_full().child(graph_cell(
+                        data.graph.row_segments(row).to_vec(),
+                        data.graph.node(row),
+                        columns,
+                        dark,
+                        if is_selected {
+                            theme.list_active
+                        } else {
+                            theme.background
+                        },
+                        head_oid == Some(oid),
+                    )))
+                    .child(
+                        h_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_1()
+                            .children(badges.into_iter().flatten())
+                            .child(div().truncate().child(c.summary.clone())),
+                    )
+                    .child(
+                        div()
+                            .w(px(110.))
+                            .flex_none()
+                            .truncate()
+                            .text_color(theme.muted_foreground)
+                            .child(c.author.clone()),
+                    )
+                    .child(
+                        div()
+                            .w(px(80.))
+                            .flex_none()
+                            .text_color(theme.muted_foreground)
+                            .child(format::relative_time(c.time, now)),
+                    )
+                    .child(
+                        div()
+                            .w(px(56.))
+                            .flex_none()
+                            .font_family("Menlo")
+                            .text_xs()
+                            .text_color(theme.muted_foreground)
+                            .child(c.short_id()),
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.graph_focus.focus(window, cx);
+                        this.repo.update(cx, |r, cx| r.select_commit(oid, cx));
+                    }))
+                    .context_menu(move |menu, _, _| commit_menu(menu, oid))
+                    .into_any_element()
+            })
+            .collect()
+    }
+
+    fn on_commit_action(&mut self, a: &CommitAction, window: &mut Window, cx: &mut Context<Self>) {
+        let rev = a.oid.clone();
+        match a.kind {
+            CommitActionKind::Checkout => self.run(Command::CheckoutDetached(rev), cx),
+            CommitActionKind::NewBranch => self.prompt_new_branch(rev, window, cx),
+            CommitActionKind::CherryPick => self.run(Command::CherryPick(rev), cx),
+            CommitActionKind::Revert => self.run(Command::Revert(rev), cx),
+            CommitActionKind::ResetSoft => self.run(
+                Command::Reset {
+                    rev,
+                    mode: ResetMode::Soft,
+                },
+                cx,
+            ),
+            CommitActionKind::ResetMixed => self.run(
+                Command::Reset {
+                    rev,
+                    mode: ResetMode::Mixed,
+                },
+                cx,
+            ),
+            CommitActionKind::ResetHard => self.confirm_reset(rev, ResetMode::Hard, window, cx),
+            CommitActionKind::Tag => {
+                let view = cx.entity().downgrade();
+                crate::dialogs::prompt_text(
+                    window,
+                    cx,
+                    "新建标签",
+                    "标签名,如 v1.0.0",
+                    String::new(),
+                    move |name, _, cx| {
+                        let rev = rev.clone();
+                        let _ = view.update(cx, |v, cx| {
+                            v.run(
+                                Command::CreateTag {
+                                    name,
+                                    rev,
+                                    message: None,
+                                },
+                                cx,
+                            )
+                        });
+                    },
+                );
+            }
+            CommitActionKind::CopySha => cx.write_to_clipboard(ClipboardItem::new_string(rev)),
+        }
+    }
+}
+
+fn commit_menu(
+    menu: gpui::component::menu::PopupMenu,
+    oid: Oid,
+) -> gpui::component::menu::PopupMenu {
+    let item = |label: &'static str, kind: CommitActionKind| {
+        let oid = oid.to_string();
+        PopupMenuItem::new(label).on_click(move |_, window, cx| {
+            window.dispatch_action(
+                Box::new(CommitAction {
+                    oid: oid.clone(),
+                    kind,
+                }),
+                cx,
+            )
+        })
+    };
+    menu.item(item("检出此提交(分离 HEAD)", CommitActionKind::Checkout))
+        .item(item("从这里新建分支…", CommitActionKind::NewBranch))
+        .item(item("在这里打标签…", CommitActionKind::Tag))
+        .separator()
+        .item(item("Cherry-pick 到当前分支", CommitActionKind::CherryPick))
+        .item(item("Revert 此提交", CommitActionKind::Revert))
+        .separator()
+        .item(item(
+            "Reset 当前分支到这里(soft)",
+            CommitActionKind::ResetSoft,
+        ))
+        .item(item(
+            "Reset 当前分支到这里(mixed)",
+            CommitActionKind::ResetMixed,
+        ))
+        .item(item(
+            "Reset 当前分支到这里(hard)…",
+            CommitActionKind::ResetHard,
+        ))
+        .separator()
+        .item(item("复制 SHA", CommitActionKind::CopySha))
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum CommitActionKind {
+    Checkout,
+    NewBranch,
+    CherryPick,
+    Revert,
+    ResetSoft,
+    ResetMixed,
+    ResetHard,
+    Tag,
+    CopySha,
+}
+
+#[derive(Clone, PartialEq, Debug, Action)]
+#[action(namespace = gitlane, no_json)]
+pub struct CommitAction {
+    pub oid: String,
+    pub kind: CommitActionKind,
+}

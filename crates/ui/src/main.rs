@@ -1,0 +1,132 @@
+//! Gitlane:Rust + GPUI 的 macOS Git 客户端。
+//!
+//! 用法:`gitlane [仓库路径…]`。不带参数时恢复上次打开的仓库。
+
+mod actions;
+mod app_icon;
+mod assets;
+mod colors;
+mod dialogs;
+mod diff_view;
+mod format;
+mod graph_canvas;
+mod graph_view;
+mod palette;
+mod panels;
+mod repo_view;
+mod root;
+mod scan_dialog;
+mod settings_view;
+mod side_panel;
+mod sidebar;
+#[cfg(test)]
+mod tests;
+#[cfg(test)]
+mod tests_panels;
+
+use actions::*;
+use gpui::*;
+use root::GitlaneWindow;
+use std::path::PathBuf;
+
+fn menus() -> Vec<Menu> {
+    vec![
+        Menu {
+            name: "Gitlane".into(),
+            items: vec![
+                MenuItem::action("设置…", OpenSettings),
+                MenuItem::separator(),
+                MenuItem::action("命令面板", CommandPalette),
+                MenuItem::action("切换主题", ToggleTheme),
+                MenuItem::separator(),
+                MenuItem::action("退出 Gitlane", Quit),
+            ],
+            disabled: false,
+        },
+        Menu {
+            name: "文件".into(),
+            items: vec![
+                MenuItem::action("打开仓库…", OpenRepository),
+                MenuItem::action("扫描目录…", ScanDirectory),
+                MenuItem::action("关闭标签", CloseTab),
+                MenuItem::separator(),
+                MenuItem::action("在终端中打开", OpenInTerminal),
+                MenuItem::action("在 Finder 中显示", RevealInFinder),
+                MenuItem::separator(),
+                MenuItem::action("刷新", Refresh),
+            ],
+            disabled: false,
+        },
+        Menu {
+            name: "仓库".into(),
+            items: vec![
+                MenuItem::action("Fetch", Fetch),
+                MenuItem::action("Pull", Pull),
+                MenuItem::action("Push", Push),
+                MenuItem::action("Force push…", ForcePush),
+                MenuItem::separator(),
+                MenuItem::action("新建分支…", NewBranch),
+                MenuItem::action("Stash", Stash),
+                MenuItem::action("Stash pop", StashPop),
+                MenuItem::separator(),
+                MenuItem::action("暂存全部", StageAll),
+                MenuItem::action("取消暂存全部", UnstageAll),
+                MenuItem::action("提交", Commit),
+                MenuItem::separator(),
+                MenuItem::action("中止进行中的操作", AbortOperation),
+            ],
+            disabled: false,
+        },
+        Menu {
+            name: "编辑".into(),
+            items: vec![
+                MenuItem::action("撤销操作", Undo),
+                MenuItem::action("重做操作", Redo),
+                MenuItem::separator(),
+                MenuItem::action("搜索提交", FocusSearch),
+            ],
+            disabled: false,
+        },
+        Menu {
+            name: "显示".into(),
+            items: vec![
+                MenuItem::action("切换统一 / 并排 diff", ToggleSplitDiff),
+                MenuItem::action("下一个标签", NextTab),
+                MenuItem::action("上一个标签", PrevTab),
+            ],
+            disabled: false,
+        },
+    ]
+}
+
+fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    let initial: Vec<PathBuf> = std::env::args().skip(1).map(PathBuf::from).collect();
+
+    gpui::application()
+        .with_assets(assets::AppAssets)
+        .run(move |cx: &mut App| {
+            gpui::init(cx);
+            actions::bind_keys(cx);
+            cx.on_action(|_: &Quit, cx| cx.quit());
+            cx.set_menus(menus());
+
+            let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
+            let options = WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("Gitlane".into()),
+                    ..Default::default()
+                }),
+                window_min_size: Some(size(px(960.), px(600.))),
+                ..Default::default()
+            };
+            let initial = initial.clone();
+            gpui::open_window(options, cx, move |window, cx| {
+                let workspace = cx.new(app::Workspace::load);
+                cx.new(|cx| GitlaneWindow::new(workspace, initial, window, cx))
+            })
+            .expect("无法打开窗口");
+            cx.activate(true);
+        });
+}

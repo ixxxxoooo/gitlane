@@ -1,0 +1,22 @@
+[package]
+name = "gitcore"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+git2.workspace = true
+thiserror.workspace = true
+similar.workspace = true
+notify.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[dev-dependencies.graph]
+path = "../graph"
+
+[dev-dependencies.git2]
+workspace = true

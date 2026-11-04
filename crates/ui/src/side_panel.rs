@@ -1,0 +1,497 @@
+//! 右栏:上方提交详情,下方暂存区与提交框。
+
+use crate::format;
+use crate::repo_view::RepoView;
+use app::{Command, Selection};
+use gitcore::diff::DiffTarget;
+use gitcore::{ChangeKind, StatusEntry};
+use gpui::base::TestSupportExt as _;
+use gpui::component::Disableable as _;
+use gpui::component::button::{Button, ButtonVariants};
+use gpui::component::checkbox::Checkbox;
+use gpui::component::input::Textarea;
+use gpui::component::{ActiveTheme, Sizable, h_flex, v_flex};
+use gpui::prelude::*;
+use gpui::*;
+
+fn kind_color(kind: ChangeKind, theme: &gpui::component::Theme) -> Hsla {
+    match kind {
+        ChangeKind::Added | ChangeKind::Untracked => theme.green,
+        ChangeKind::Deleted => theme.red,
+        ChangeKind::Conflicted => theme.warning,
+        ChangeKind::Renamed | ChangeKind::Copied => theme.blue,
+        _ => theme.yellow,
+    }
+}
+
+impl RepoView {
+    pub(crate) fn render_side_panel(
+        &mut self,
+        width: Pixels,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let selection = self.repo.read(cx).selection;
+        let theme = cx.theme().clone();
+        let details = match selection {
+            Selection::Commit(_) => Some(self.render_details(cx)),
+            Selection::WorkingChanges => None,
+        };
+        v_flex()
+            .w(width)
+            .flex_none()
+            .h_full()
+            .children(details.map(|d| {
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .border_b_1()
+                    .border_color(theme.border)
+                    .child(d)
+            }))
+            .child(self.render_staging(selection == Selection::WorkingChanges, window, cx))
+            .id("side-panel")
+            .test_support()
+    }
+
+    fn render_details(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let repo = self.repo.read(cx);
+        let theme = cx.theme().clone();
+        let Some(detail) = repo.detail.clone() else {
+            return div()
+                .p_3()
+                .text_color(theme.muted_foreground)
+                .child("加载中…")
+                .into_any_element();
+        };
+        let oid = detail.info.id;
+        let open_path = repo.diff.as_ref().map(|d| d.path.clone());
+        let sha = oid.to_string();
+
+        let meta = v_flex()
+            .gap_1()
+            .p_3()
+            .text_sm()
+            .child(
+                div()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(detail.info.summary.clone()),
+            )
+            .child({
+                let body = detail
+                    .message
+                    .trim()
+                    .split_once('\n')
+                    .map(|x| x.1)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                div().when(!body.is_empty(), |d| {
+                    d.text_color(theme.muted_foreground)
+                        .whitespace_normal()
+                        .child(body)
+                })
+            })
+            .child(
+                h_flex()
+                    .gap_1()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(format!("{} <{}>", detail.info.author, detail.info.email)),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(format!(
+                        "作者时间 {}",
+                        format::datetime(detail.info.time, detail.info.tz_offset)
+                    )),
+            )
+            .when(detail.committer != detail.info.author, |d| {
+                d.child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child(format!(
+                            "提交者 {} · {}",
+                            detail.committer,
+                            format::datetime(detail.commit_time, 0)
+                        )),
+                )
+            })
+            .child(
+                h_flex()
+                    .id("sha")
+                    .gap_1()
+                    .text_xs()
+                    .font_family("Menlo")
+                    .text_color(theme.muted_foreground)
+                    .cursor_pointer()
+                    .child(sha.clone())
+                    .tooltip(|window, cx| {
+                        gpui::component::tooltip::Tooltip::new("点击复制").build(window, cx)
+                    })
+                    .on_click(move |_, window, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(sha.clone()));
+                        use gpui::component::WindowExt as _;
+                        window.push_notification(
+                            gpui::component::notification::Notification::info("已复制 SHA"),
+                            cx,
+                        );
+                    }),
+            )
+            .when(detail.info.parents.len() > 1, |d| {
+                d.child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child(format!(
+                            "合并提交 · 父提交 {}",
+                            detail
+                                .info
+                                .parents
+                                .iter()
+                                .map(|p| gitcore::short_id(*p))
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        )),
+                )
+            });
+
+        let files = detail.files.iter().map(|f| {
+            let path = f.path.clone();
+            let active = open_path.as_deref() == Some(f.path.as_str());
+            h_flex()
+                .id(SharedString::from(format!("cf-{}", f.path)))
+                .px_3()
+                .h(px(24.))
+                .gap_2()
+                .text_sm()
+                .cursor_pointer()
+                .when(active, |d| d.bg(theme.list_active))
+                .hover(|s| s.bg(theme.list_hover))
+                .child(
+                    div()
+                        .w(px(12.))
+                        .text_color(kind_color(f.kind, &theme))
+                        .child(f.kind.letter()),
+                )
+                .child(div().flex_1().truncate().child(match &f.old_path {
+                    Some(old) => format!("{old} → {}", f.path),
+                    None => f.path.clone(),
+                }))
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.green)
+                        .child(format!("+{}", f.additions)),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.red)
+                        .child(format!("−{}", f.deletions)),
+                )
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    let path = path.clone();
+                    this.repo
+                        .update(cx, |r, cx| r.open_diff(DiffTarget::Commit(oid), path, cx))
+                }))
+        });
+
+        div()
+            .id("details")
+            .size_full()
+            .overflow_y_scroll()
+            .child(meta)
+            .child(
+                div()
+                    .px_3()
+                    .py_1()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(format!("{} 个文件改动", detail.files.len())),
+            )
+            .children(files)
+            .into_any_element()
+    }
+
+    fn render_staging(
+        &mut self,
+        expanded: bool,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let repo = self.repo.read(cx);
+        let theme = cx.theme().clone();
+        let status = repo.status.clone();
+        let open = repo.diff.as_ref().map(|d| (d.target, d.path.clone()));
+        let busy = repo.busy.is_some();
+        let (unstaged, staged): (Vec<StatusEntry>, Vec<StatusEntry>) = status
+            .as_ref()
+            .map(|s| {
+                (
+                    s.unstaged().cloned().collect(),
+                    s.staged().cloned().collect(),
+                )
+            })
+            .unwrap_or_default();
+
+        let file_row = |e: &StatusEntry, staged_list: bool, cx: &mut Context<Self>| {
+            let kind =
+                if staged_list { e.staged } else { e.unstaged }.unwrap_or(ChangeKind::Modified);
+            let target = if staged_list {
+                DiffTarget::Staged
+            } else {
+                DiffTarget::Unstaged
+            };
+            let path = e.path.clone();
+            let active = open
+                .as_ref()
+                .is_some_and(|(t, p)| *t == target && *p == e.path);
+            let (dir, name) = match e.path.rsplit_once('/') {
+                Some((d, n)) => (Some(d.to_string()), n.to_string()),
+                None => (None, e.path.clone()),
+            };
+            let p_open = path.clone();
+            let p_action = path.clone();
+            let p_discard = path.clone();
+            let untracked = kind == ChangeKind::Untracked;
+            h_flex()
+                .id(SharedString::from(format!(
+                    "{}-{}",
+                    if staged_list { "s" } else { "u" },
+                    e.path
+                )))
+                .group("file-row")
+                .px_3()
+                .h(px(24.))
+                .gap_2()
+                .text_sm()
+                .cursor_pointer()
+                .when(active, |d| d.bg(theme.list_active))
+                .hover(|s| s.bg(theme.list_hover))
+                .child(
+                    div()
+                        .w(px(12.))
+                        .text_color(kind_color(kind, &theme))
+                        .child(kind.letter()),
+                )
+                .child(
+                    h_flex()
+                        .flex_1()
+                        .min_w_0()
+                        .gap_1()
+                        .child(div().flex_none().child(name))
+                        .children(dir.map(|d| {
+                            div()
+                                .truncate()
+                                .text_xs()
+                                .text_color(theme.muted_foreground)
+                                .child(d)
+                        })),
+                )
+                .when(!staged_list, |d| {
+                    d.child(
+                        Button::new(SharedString::from(format!("discard-{}", e.path)))
+                            .xsmall()
+                            .ghost()
+                            .label("丢弃")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.confirm_discard(
+                                    vec![(p_discard.clone(), untracked)],
+                                    window,
+                                    cx,
+                                )
+                            })),
+                    )
+                })
+                .child(
+                    Button::new(SharedString::from(format!(
+                        "toggle-{}-{}",
+                        staged_list, e.path
+                    )))
+                    .xsmall()
+                    .ghost()
+                    .label(if staged_list {
+                        "取消暂存"
+                    } else {
+                        "暂存"
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        let p = vec![p_action.clone()];
+                        this.run(
+                            if staged_list {
+                                Command::UnstagePaths(p)
+                            } else {
+                                Command::StagePaths(p)
+                            },
+                            cx,
+                        )
+                    })),
+                )
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    let path = p_open.clone();
+                    this.repo.update(cx, |r, cx| {
+                        r.select_working(cx);
+                        r.open_diff(target, path, cx)
+                    })
+                }))
+                .test_support()
+        };
+
+        let header = |title: String, button: Option<Button>| {
+            h_flex()
+                .px_3()
+                .h(px(28.))
+                .gap_2()
+                .text_xs()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.muted_foreground)
+                .child(div().flex_1().child(title))
+                .children(button)
+        };
+
+        let all_unstaged: Vec<(String, bool)> = unstaged
+            .iter()
+            .map(|e| (e.path.clone(), e.unstaged == Some(ChangeKind::Untracked)))
+            .collect();
+
+        let unstaged_list = v_flex()
+            .child(header(
+                format!("未暂存 {}", unstaged.len()),
+                (!unstaged.is_empty()).then(|| {
+                    Button::new("stage-all")
+                        .xsmall()
+                        .ghost()
+                        .label("全部暂存")
+                        .on_click(cx.listener(|this, _, _, cx| this.run(Command::StageAll, cx)))
+                }),
+            ))
+            .children(unstaged.iter().map(|e| file_row(e, false, cx)))
+            .when(unstaged.len() > 1, |d| {
+                d.child(
+                    h_flex().px_3().child(
+                        Button::new("discard-all")
+                            .xsmall()
+                            .ghost()
+                            .label("丢弃全部未暂存改动…")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.confirm_discard(all_unstaged.clone(), window, cx)
+                            })),
+                    ),
+                )
+            });
+        let staged_list = v_flex()
+            .child(header(
+                format!("已暂存 {}", staged.len()),
+                (!staged.is_empty()).then(|| {
+                    Button::new("unstage-all")
+                        .xsmall()
+                        .ghost()
+                        .label("全部取消暂存")
+                        .on_click(cx.listener(|this, _, _, cx| this.run(Command::UnstageAll, cx)))
+                }),
+            ))
+            .children(staged.iter().map(|e| file_row(e, true, cx)));
+
+        let amend = self.amend;
+        let commit_box = v_flex()
+            .p_3()
+            .gap_2()
+            .border_t_1()
+            .border_color(theme.border)
+            .child(Textarea::new(&self.message).h(px(96.)))
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(
+                        Checkbox::new("amend")
+                            .label("修改上一次提交(amend)")
+                            .checked(amend)
+                            .on_click(cx.listener(|this, checked: &bool, window, cx| {
+                                this.amend = *checked;
+                                // 勾选 amend 且输入框为空时,带出上一次的提交信息
+                                if *checked && this.message.read(cx).value().trim().is_empty() {
+                                    let last = this.repo.read(cx).data.as_ref().and_then(|d| {
+                                        let head = d.refs.head.oid()?;
+                                        let row = *d.history.row_of.get(&head)?;
+                                        Some(d.history.commits[row as usize].summary.clone())
+                                    });
+                                    if let Some(msg) = last {
+                                        this.message
+                                            .update(cx, |m, cx| m.set_value(msg, window, cx));
+                                    }
+                                }
+                                cx.notify();
+                            })),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        Button::new("commit")
+                            .small()
+                            .primary()
+                            .label(if amend { "修改提交" } else { "提交" })
+                            .disabled(busy)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.on_commit(&crate::actions::Commit, window, cx)
+                            })),
+                    ),
+            );
+
+        v_flex()
+            .when(expanded, |d| d.flex_1())
+            .when(!expanded, |d| d.h(px(380.)))
+            .min_h_0()
+            .child(
+                div()
+                    .id("staging-lists")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .child(unstaged_list)
+                    .child(staged_list),
+            )
+            .child(commit_box)
+    }
+
+    pub(crate) fn confirm_discard(
+        &mut self,
+        files: Vec<(String, bool)>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut lines = vec![format!(
+            "将丢弃以下 {} 个文件的未暂存改动(可以撤销):",
+            files.len()
+        )];
+        lines.extend(files.iter().take(20).map(|(p, untracked)| {
+            format!(
+                "  {p}{}",
+                if *untracked {
+                    "(未跟踪,将删除)"
+                } else {
+                    ""
+                }
+            )
+        }));
+        if files.len() > 20 {
+            lines.push(format!("  …以及另外 {} 个文件", files.len() - 20));
+        }
+        let view = cx.entity().downgrade();
+        crate::dialogs::confirm(window, cx, "丢弃改动", lines, "丢弃", move |_, cx| {
+            let (untracked, tracked): (Vec<_>, Vec<_>) =
+                files.iter().cloned().partition(|(_, u)| *u);
+            let _ = view.update(cx, |v, cx| {
+                v.run(
+                    Command::Discard {
+                        tracked: tracked.into_iter().map(|(p, _)| p).collect(),
+                        untracked: untracked.into_iter().map(|(p, _)| p).collect(),
+                    },
+                    cx,
+                )
+            });
+        });
+    }
+}

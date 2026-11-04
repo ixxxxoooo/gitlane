@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs>
+  <linearGradient id="bg" x1="0" y1="100" x2="0" y2="924" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2A2D33"/><stop offset="1" stop-color="#14161A"/></linearGradient>
+  <linearGradient id="ac" x1="396" y1="268" x2="628" y2="756" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5EE0C1"/><stop offset="1" stop-color="#1FB892"/></linearGradient>
+  <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.16"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  <filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000" flood-opacity="0.5"/></filter>
+</defs>
+<rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)" filter="url(#sh)"/>
+<rect x="102" y="102" width="820" height="820" rx="184" fill="none" stroke="url(#rim)" stroke-width="4"/>
+  <path d="M 396 268 C 396 394.0, 628 352.0, 628 478 L 628 546 C 628 672.0, 396 630.0, 396 756" fill="none" stroke="url(#ac)" stroke-width="60" stroke-linecap="round"/>
+  <rect x="366.0" y="268" width="60" height="488" fill="#ECEEF2"/>
+  <circle cx="396" cy="268" r="80" fill="url(#bg)"/>
+  <circle cx="396" cy="268" r="62" fill="#ECEEF2"/>
+  <circle cx="396" cy="512" r="80" fill="url(#bg)"/>
+  <circle cx="396" cy="512" r="62" fill="#ECEEF2"/>
+  <circle cx="628" cy="512" r="80" fill="url(#bg)"/>
+  <circle cx="628" cy="512" r="62" fill="url(#ac)"/>
+  <circle cx="396" cy="756" r="80" fill="url(#bg)"/>
+  <circle cx="396" cy="756" r="62" fill="#ECEEF2"/>
+  <circle cx="396" cy="756" r="36" fill="url(#bg)"/>
+</svg>
