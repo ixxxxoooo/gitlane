@@ -447,3 +447,31 @@ fn cancel_kills_running_command() {
     );
     assert!(matches!(r, Err(gitcore::Error::Cancelled)) || r.is_ok());
 }
+
+#[test]
+fn status_carries_line_stats_for_staged_unstaged_and_untracked() {
+    let f = Fixture::new();
+    f.write("a.txt", "1\n2\n3\n");
+    f.write("b.txt", "x\ny\n");
+    f.git.run(&["add", "-A"]).unwrap();
+    f.git.run(&["commit", "-qm", "init"]).unwrap();
+
+    // a.txt:暂存一处新增,再在工作区删一行;b.txt 只在工作区改一行;c.txt 未跟踪 3 行
+    f.write("a.txt", "1\n2\n3\n4\n");
+    f.git.run(&["add", "a.txt"]).unwrap();
+    f.write("a.txt", "1\n2\n4\n");
+    f.write("b.txt", "x\nz\n");
+    f.write("c.txt", "p\nq\nr\n");
+
+    let st = Repo::open(f.path()).unwrap().status().unwrap();
+    let get = |name: &str| st.entries.iter().find(|e| e.path == name).unwrap();
+    assert_eq!(get("a.txt").staged_lines, Some((1, 0)));
+    assert_eq!(get("a.txt").unstaged_lines, Some((0, 1)));
+    assert_eq!(get("b.txt").unstaged_lines, Some((1, 1)));
+    assert_eq!(get("b.txt").staged_lines, None, "没有暂存改动就没有统计");
+    assert_eq!(
+        get("c.txt").unstaged_lines,
+        Some((3, 0)),
+        "未跟踪文件整个算新增"
+    );
+}

@@ -12,6 +12,9 @@ pub struct Repo {
     workdir: PathBuf,
 }
 
+/// 改动文件数超过这个值时,状态里不带增删行数。
+pub const STATUS_STATS_MAX_FILES: usize = 300;
+
 impl Repo {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
@@ -244,13 +247,58 @@ impl Repo {
                 old_path,
                 staged,
                 unstaged,
+                staged_lines: None,
+                unstaged_lines: None,
             });
         }
         entries.sort_by(|a, b| a.path.cmp(&b.path));
+        // 改动文件太多时不统计行数:逐文件生成补丁在大仓库里太贵,界面只是少显示 +N −N
+        if entries.len() <= STATUS_STATS_MAX_FILES {
+            self.fill_line_stats(&mut entries);
+        }
         Ok(RepoStatus {
             entries,
             state: self.state(),
         })
+    }
+
+    /// 给状态条目补上已暂存 / 未暂存部分的增删行数。统计失败只是不显示数字,不影响状态本身。
+    fn fill_line_stats(&self, entries: &mut [StatusEntry]) {
+        let staged = self.stat_map(true);
+        let unstaged = self.stat_map(false);
+        for e in entries {
+            e.staged_lines = e.staged.and(staged.get(&e.path).copied());
+            e.unstaged_lines = e.unstaged.and(unstaged.get(&e.path).copied());
+        }
+    }
+
+    /// 路径 → (新增, 删除)。`staged` 为真统计 HEAD → 索引,否则统计 索引 → 工作区(含未跟踪文件内容)。
+    fn stat_map(&self, staged: bool) -> HashMap<String, (usize, usize)> {
+        let diff = if staged {
+            let head = self.inner.head().ok().and_then(|h| h.peel_to_tree().ok());
+            self.inner.diff_tree_to_index(head.as_ref(), None, None)
+        } else {
+            let mut opts = git2::DiffOptions::new();
+            opts.include_untracked(true)
+                .recurse_untracked_dirs(true)
+                .show_untracked_content(true);
+            self.inner.diff_index_to_workdir(None, Some(&mut opts))
+        };
+        let Ok(mut diff) = diff else {
+            return HashMap::new();
+        };
+        if staged {
+            // 与 status 的重命名检测一致:重命名文件只算内容差异,不把整个文件算新增
+            let _ = diff.find_similar(None);
+        }
+        crate::diff::file_changes(&diff)
+            .map(|files| {
+                files
+                    .into_iter()
+                    .map(|f| (f.path, (f.additions, f.deletions)))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn commit_detail(&self, id: Oid) -> Result<CommitDetail> {

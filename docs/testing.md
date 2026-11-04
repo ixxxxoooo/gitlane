@@ -26,6 +26,7 @@ cargo run -p graph --release --example bench_layout -- 50000
 | 2026-11-04 | 泳道布局 50,000 提交 | 1.86 ms | release,合成历史(每 7 个提交一次合并) |
 | 2026-11-04 | 打开 52,499 提交仓库(历史 + 布局 + 引用 + status) | 480–880 ms | debug / release 构建均在此区间,受同时加载的其它标签影响;`gen_big_repo.py` 生成,含 2,535 个引用 |
 | 2026-11-04 | 读路径分段(release) | history 587 ms · refs 89 ms · status 1 ms | `cargo run -p gitcore --release --example bench_load -- <仓库>` |
+| 2026-11-04 | 状态带增删行数(release) | 300 个已改文件(每个 500 行 +50 行):status 44.5 ms;本仓库 6 个条目:6.4 ms。超过 300 个文件不统计 | 同上,对临时仓库 |
 | 2026-11-04 | 内存(release,RSS,稳定后) | 空窗口 109 MB · 小仓库 118 MB · 5 万提交仓库 248 MB | 活动监视器口径;5 万提交时超出 150 MB 目标 |
 | 2026-11-04 | 空闲 CPU | ≈ 0% | 加载完成后 `top` 采样 |
 | 2026-11-04 | 一帧渲染(打开 2,535 个引用的仓库 + 扫描对话框) | 38 ms → 2.8 ms | 无头测试、debug 构建;引用树改为虚拟列表前后 |

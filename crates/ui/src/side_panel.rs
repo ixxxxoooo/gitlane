@@ -301,6 +301,8 @@ impl RepoView {
                 };
                 h_flex()
                     .id(SharedString::from(format!("cf-{}", f.path)))
+                    // 虚拟列表里的行默认只有内容那么宽,不撑满的话增删行数和状态字母会紧跟在路径后面
+                    .w_full()
                     .px_3()
                     .h(px(26.))
                     .gap_2()
@@ -397,6 +399,13 @@ impl RepoView {
             let p_action = path.clone();
             let p_discard = path.clone();
             let untracked = kind == ChangeKind::Untracked;
+            // 增删行数;二进制文件或超过统计上限时没有数字
+            let lines = if staged_list {
+                e.staged_lines
+            } else {
+                e.unstaged_lines
+            }
+            .filter(|(a, d)| a + d > 0);
             h_flex()
                 .id(SharedString::from(format!(
                     "{}-{}",
@@ -411,12 +420,6 @@ impl RepoView {
                 .cursor_pointer()
                 .when(active, |d| d.bg(theme.list_active))
                 .hover(|s| s.bg(theme.list_hover))
-                .child(
-                    div()
-                        .w(px(12.))
-                        .text_color(kind_color(kind, &theme))
-                        .child(kind.letter()),
-                )
                 .child(crate::file_icons::file_icon(&e.path, &theme).xsmall())
                 .child(
                     h_flex()
@@ -432,12 +435,32 @@ impl RepoView {
                                 .child(d)
                         })),
                 )
+                .children(lines.map(|(a, d)| {
+                    h_flex()
+                        .flex_none()
+                        .gap_1()
+                        .text_xs()
+                        .child(div().text_color(theme.green).child(format!("+{a}")))
+                        .when(d > 0, |x| {
+                            x.child(div().text_color(theme.red).child(format!("−{d}")))
+                        })
+                }))
+                .child(
+                    div()
+                        .w(px(12.))
+                        .flex_none()
+                        .text_xs()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(kind_color(kind, &theme))
+                        .child(kind.letter()),
+                )
                 .when(!staged_list, |d| {
                     d.child(
                         Button::new(SharedString::from(format!("discard-{}", e.path)))
                             .xsmall()
                             .ghost()
-                            .label("丢弃")
+                            .icon(Icon::from(gpui::assets::IconName::Undo2))
+                            .tooltip("丢弃这个文件的改动")
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.confirm_discard(
                                     vec![(p_discard.clone(), untracked)],
@@ -454,7 +477,12 @@ impl RepoView {
                     )))
                     .xsmall()
                     .ghost()
-                    .label(if staged_list {
+                    .icon(Icon::from(if staged_list {
+                        gpui::assets::IconName::Minus
+                    } else {
+                        gpui::assets::IconName::Plus
+                    }))
+                    .tooltip(if staged_list {
                         "取消暂存"
                     } else {
                         "暂存"
@@ -486,28 +514,33 @@ impl RepoView {
             .map(|e| (e.path.clone(), e.unstaged == Some(ChangeKind::Untracked)))
             .collect();
 
+        // 标题栏右侧的图标按钮:丢弃全部(只有多于一个文件时)+ 全部暂存
         let stage_all = (!unstaged.is_empty()).then(|| {
-            Button::new("stage-all")
-                .xsmall()
-                .ghost()
-                .label("全部暂存")
-                .on_click(cx.listener(|this, _, _, cx| this.run(Command::StageAll, cx)))
-        });
-        let unstaged_body = v_flex()
-            .children(unstaged.iter().map(|e| file_row(e, false, cx)))
-            .when(unstaged.len() > 1, |d| {
-                d.child(
-                    h_flex().px_3().child(
+            h_flex()
+                .gap_0p5()
+                .when(unstaged.len() > 1, |d| {
+                    d.child(
                         Button::new("discard-all")
                             .xsmall()
                             .ghost()
-                            .label("丢弃全部未暂存改动…")
+                            .icon(Icon::from(gpui::assets::IconName::Undo2))
+                            .tooltip("丢弃全部未暂存改动")
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.confirm_discard(all_unstaged.clone(), window, cx)
                             })),
-                    ),
+                    )
+                })
+                .child(
+                    Button::new("stage-all")
+                        .xsmall()
+                        .ghost()
+                        .icon(Icon::from(gpui::assets::IconName::Plus))
+                        .tooltip("全部暂存")
+                        .on_click(cx.listener(|this, _, _, cx| this.run(Command::StageAll, cx))),
                 )
-            })
+        });
+        let unstaged_body = v_flex()
+            .children(unstaged.iter().map(|e| file_row(e, false, cx)))
             .when(unstaged.is_empty(), |d| {
                 d.child(empty_hint("没有未暂存的改动", &theme))
             });
@@ -515,7 +548,8 @@ impl RepoView {
             Button::new("unstage-all")
                 .xsmall()
                 .ghost()
-                .label("全部取消暂存")
+                .icon(Icon::from(gpui::assets::IconName::Minus))
+                .tooltip("全部取消暂存")
                 .on_click(cx.listener(|this, _, _, cx| this.run(Command::UnstageAll, cx)))
         });
         let staged_body = v_flex()

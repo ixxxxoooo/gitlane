@@ -188,6 +188,10 @@ pub struct StatusEntry {
     pub staged: Option<ChangeKind>,
     /// 工作区相对索引的改动(未暂存)。
     pub unstaged: Option<ChangeKind>,
+    /// 已暂存部分的 (新增, 删除) 行数;文件数超过上限或二进制文件时为 `None`。
+    pub staged_lines: Option<(usize, usize)>,
+    /// 未暂存部分的 (新增, 删除) 行数;含未跟踪文件(整个文件算新增)。
+    pub unstaged_lines: Option<(usize, usize)>,
 }
 
 #[derive(Clone, Debug)]

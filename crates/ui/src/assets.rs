@@ -28,6 +28,8 @@ gpui::assets::icon_assets!(
         GitGraph,
         Hash,
         Laptop,
+        Minus,
+        Plus,
         Tag,
     ]
 );

@@ -7,7 +7,7 @@ use gitcore::diff::{DiffTarget, FileDiff, LineKind, inline_changes, pair_changed
 use gitcore::highlight::DiffSyntax;
 use gitcore::patch::PatchDirection;
 use gpui::component::button::{Button, ButtonVariants};
-use gpui::component::{ActiveTheme, Sizable, h_flex, v_flex};
+use gpui::component::{ActiveTheme, Icon, Sizable, h_flex, v_flex};
 use gpui::prelude::*;
 use gpui::*;
 use std::collections::{BTreeSet, HashMap};
@@ -638,7 +638,8 @@ impl RepoView {
                                         Button::new(("stage-hunk", h))
                                             .xsmall()
                                             .ghost()
-                                            .label("暂存 hunk")
+                                            .icon(Icon::from(gpui::assets::IconName::Plus))
+                                            .tooltip("暂存这个 hunk")
                                             .on_click(cx.listener(move |this, _, _, cx| {
                                                 this.apply_hunk(h, PatchDirection::Stage, cx)
                                             })),
@@ -647,7 +648,8 @@ impl RepoView {
                                         Button::new(("discard-hunk", h))
                                             .xsmall()
                                             .ghost()
-                                            .label("丢弃 hunk")
+                                            .icon(Icon::from(gpui::assets::IconName::Undo2))
+                                            .tooltip("丢弃这个 hunk")
                                             .on_click(cx.listener(move |this, _, _, cx| {
                                                 this.apply_hunk(h, PatchDirection::Discard, cx)
                                             })),
@@ -658,7 +660,8 @@ impl RepoView {
                                     Button::new(("unstage-hunk", h))
                                         .xsmall()
                                         .ghost()
-                                        .label("取消暂存 hunk")
+                                        .icon(Icon::from(gpui::assets::IconName::Minus))
+                                        .tooltip("取消暂存这个 hunk")
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.apply_hunk(h, PatchDirection::Unstage, cx)
                                         })),
