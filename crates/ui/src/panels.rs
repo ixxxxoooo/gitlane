@@ -38,7 +38,8 @@ pub fn dragged_diff_ratio(from_bottom: f32, total: f32) -> f32 {
     clamp_diff_ratio(from_bottom / total)
 }
 
-/// 横向分隔条:中间一条细线,悬停或拖动时高亮。
+/// 横向分隔条:一条细线,悬停或拖动时高亮。线贴在下边缘,紧挨下面有底色的 diff 标题栏,
+/// 不会在两者之间留出一条空隙而显得是两条线。
 pub fn row_handle(id: &'static str, line: Hsla, hover: Hsla) -> Stateful<Div> {
     div()
         .id(id)
@@ -47,7 +48,7 @@ pub fn row_handle(id: &'static str, line: Hsla, hover: Hsla) -> Stateful<Div> {
         .flex_none()
         .flex()
         .flex_col()
-        .justify_center()
+        .justify_end()
         .cursor(CursorStyle::ResizeRow)
         .group(id)
         .child(
@@ -128,15 +129,27 @@ pub fn dragged_width(side: PanelSide, offset: f32, total: f32, other: f32) -> f3
     side.clamp(offset.min(room.max(side.min())))
 }
 
-/// 分隔条:中间一条细线,悬停或拖动时高亮。双击恢复默认宽度由调用方处理。
-pub fn handle(id: &'static str, side: PanelSide, line: Hsla, hover: Hsla) -> Stateful<Div> {
+/// 竖向分隔条:一条细线,悬停或拖动时高亮。双击恢复默认宽度由调用方处理。
+///
+/// `fill` 是分隔条自身留白区域的底色:左侧栏的底色和中间区域不同,留白不填同色就会在侧栏边缘
+/// 和细线之间多出一道空隙,看起来像两条线;所以左侧栏的分隔条填侧栏底色、线贴在右边缘。
+pub fn handle(
+    id: &'static str,
+    side: PanelSide,
+    line: Hsla,
+    hover: Hsla,
+    fill: Option<Hsla>,
+) -> Stateful<Div> {
+    let at_end = side == PanelSide::Left;
     div()
         .id(id)
         .w(px(HANDLE_WIDTH))
         .h_full()
         .flex_none()
         .flex()
-        .justify_center()
+        .when(at_end, |d| d.justify_end())
+        .when(!at_end, |d| d.justify_center())
+        .when_some(fill, |d, c| d.bg(c))
         .cursor(CursorStyle::ResizeColumn)
         .group(id)
         .child(

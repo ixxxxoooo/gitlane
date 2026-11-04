@@ -521,7 +521,9 @@ impl RepoView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let theme = cx.theme();
-        panels::handle(id, side, theme.border, theme.primary)
+        // 左侧栏底色与中间不同:分隔条留白填侧栏底色,线贴着侧栏边缘
+        let fill = (side == PanelSide::Left).then_some(theme.sidebar);
+        panels::handle(id, side, theme.border, theme.primary, fill)
             .on_click(cx.listener(move |this, e: &ClickEvent, _, cx| {
                 // 双击恢复默认宽度
                 if e.click_count() >= 2 {
