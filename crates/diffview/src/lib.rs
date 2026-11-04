@@ -80,7 +80,7 @@ use gpui::component::{
     button::{Button, ButtonVariants as _},
     h_flex,
     input::{Copy, SelectAll},
-    scroll::{ScrollableMask, Scrollbar},
+    scroll::{ScrollableMask, Scrollbar, ScrollbarMode},
     v_flex,
 };
 use presentation::FilePresentation;
@@ -147,6 +147,15 @@ pub fn init(cx: &mut App) {
             Some(KEY_CONTEXT),
         ),
     ]);
+}
+
+/// Gitlane:滚动条滑块宽度。
+const THUMB_WIDTH: Pixels = px(8.);
+
+/// Gitlane:滑块贴边、一直显示(默认只在滚动时出现,横向滚动条因此像是不存在)。
+fn flush_scrollbar(bar: Scrollbar) -> Scrollbar {
+    bar.mode(ScrollbarMode::Always)
+        .styles(|s| s.thumb(|t| t.width(THUMB_WIDTH).inset(px(0.))))
 }
 
 /// How a [`Diff`] presents the two sides of each file.
@@ -741,7 +750,8 @@ fn render_diff(
                     .absolute()
                     .top_0()
                     .bottom_0()
-                    .right_0()
+                    // 在滚动条(宽 THUMB_WIDTH)左边,不被滑块盖住
+                    .right(THUMB_WIDTH + px(2.))
                     .w(px(4.))
                     .children(ruler.into_iter().map(|(top, height)| {
                         div()
@@ -760,10 +770,10 @@ fn render_diff(
                 div()
                     .absolute()
                     .inset_0()
-                    .child(Scrollbar::vertical(&scrollbar).viewport_from_layout()),
+                    .child(flush_scrollbar(Scrollbar::vertical(&scrollbar)).viewport_from_layout()),
             )
             .when(!soft_wrap, |this| {
-                this.child(Scrollbar::horizontal(&horizontal))
+                this.child(flush_scrollbar(Scrollbar::horizontal(&horizontal)))
             })
         })
         // A line-number drag may finish anywhere, including outside the body.
