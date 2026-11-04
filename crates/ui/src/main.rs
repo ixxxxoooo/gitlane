@@ -19,6 +19,7 @@ mod root;
 mod scan_dialog;
 mod settings_view;
 mod side_panel;
+mod side_section;
 mod sidebar;
 #[cfg(test)]
 mod tests;

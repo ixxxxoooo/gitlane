@@ -22,20 +22,14 @@ fn split_path(path: &str) -> (Option<String>, String) {
     }
 }
 
-/// 右栏各区域的标题栏。
-fn panel_header(icon: Icon, title: &'static str, theme: &gpui::component::Theme) -> Div {
-    h_flex()
-        .h(px(34.))
-        .flex_none()
+/// 面板里没有内容时的提示。
+fn empty_hint(text: &'static str, theme: &gpui::component::Theme) -> Div {
+    div()
         .px_3()
-        .gap_2()
+        .py_1()
         .text_xs()
-        .font_weight(FontWeight::SEMIBOLD)
         .text_color(theme.muted_foreground)
-        .border_b_1()
-        .border_color(theme.border)
-        .child(icon.xsmall())
-        .child(title)
+        .child(text)
 }
 
 fn kind_color(kind: ChangeKind, theme: &gpui::component::Theme) -> Hsla {
@@ -56,24 +50,20 @@ impl RepoView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let selection = self.repo.read(cx).selection;
-        let theme = cx.theme().clone();
-        let details = match selection {
-            Selection::Commit(_) => Some(self.render_details(cx)),
-            Selection::WorkingChanges => None,
-        };
+        // 固定顺序:提交详情(仅选中提交时)、未暂存、已暂存;提交框固定在底部
+        let mut sections = Vec::new();
+        if matches!(selection, Selection::Commit(_)) {
+            sections.push(self.render_details(cx));
+        }
+        let (unstaged, staged, commit_box) = self.render_staging(window, cx);
+        sections.push(unstaged);
+        sections.push(staged);
         v_flex()
             .w(width)
             .flex_none()
             .h_full()
-            .children(details.map(|d| {
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .border_b_1()
-                    .border_color(theme.border)
-                    .child(d)
-            }))
-            .child(self.render_staging(selection == Selection::WorkingChanges, window, cx))
+            .children(sections)
+            .child(commit_box)
             .id("side-panel")
             .test_support()
     }
@@ -82,23 +72,15 @@ impl RepoView {
         let repo = self.repo.read(cx);
         let theme = cx.theme().clone();
         let dark = theme.is_dark();
-        let header = panel_header(
-            Icon::from(gpui::assets::IconName::GitCommitHorizontal),
-            "提交详情",
-            &theme,
-        );
+        let icon = Icon::from(gpui::assets::IconName::GitCommitHorizontal);
         let Some(detail) = repo.detail.clone() else {
-            return v_flex()
-                .size_full()
-                .child(header)
-                .child(
-                    div()
-                        .p_3()
-                        .text_sm()
-                        .text_color(theme.muted_foreground)
-                        .child("加载中…"),
-                )
+            let loading = div()
+                .p_3()
+                .text_sm()
+                .text_color(theme.muted_foreground)
+                .child("加载中…")
                 .into_any_element();
+            return self.side_section("details", icon, "提交详情".into(), None::<Div>, loading, cx);
         };
         let sha = detail.info.id.to_string();
         let short = gitcore::short_id(detail.info.id);
@@ -260,9 +242,8 @@ impl RepoView {
             .child(div().text_color(theme.red).child(format!("−{deletions}")));
 
         let n = detail.files.len();
-        v_flex()
+        let body = v_flex()
             .size_full()
-            .child(header)
             .child(
                 div()
                     .id("details")
@@ -283,7 +264,8 @@ impl RepoView {
                 .flex_1()
                 .min_h_0(),
             )
-            .into_any_element()
+            .into_any_element();
+        self.side_section("details", icon, "提交详情".into(), None::<Div>, body, cx)
     }
 
     /// 提交改动文件列表的可见行。一个提交可能改上千个文件,所以用虚拟列表。
@@ -373,12 +355,12 @@ impl RepoView {
             .collect()
     }
 
+    /// 返回 (未暂存面板, 已暂存面板, 提交框)。
     fn render_staging(
         &mut self,
-        expanded: bool,
         _: &mut Window,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
+    ) -> (AnyElement, AnyElement, AnyElement) {
         let repo = self.repo.read(cx);
         let theme = cx.theme().clone();
         let status = repo.status.clone();
@@ -499,34 +481,19 @@ impl RepoView {
                 .test_support()
         };
 
-        let header = |title: String, button: Option<Button>| {
-            h_flex()
-                .px_3()
-                .h(px(28.))
-                .gap_2()
-                .text_xs()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.muted_foreground)
-                .child(div().flex_1().child(title))
-                .children(button)
-        };
-
         let all_unstaged: Vec<(String, bool)> = unstaged
             .iter()
             .map(|e| (e.path.clone(), e.unstaged == Some(ChangeKind::Untracked)))
             .collect();
 
-        let unstaged_list = v_flex()
-            .child(header(
-                format!("未暂存 {}", unstaged.len()),
-                (!unstaged.is_empty()).then(|| {
-                    Button::new("stage-all")
-                        .xsmall()
-                        .ghost()
-                        .label("全部暂存")
-                        .on_click(cx.listener(|this, _, _, cx| this.run(Command::StageAll, cx)))
-                }),
-            ))
+        let stage_all = (!unstaged.is_empty()).then(|| {
+            Button::new("stage-all")
+                .xsmall()
+                .ghost()
+                .label("全部暂存")
+                .on_click(cx.listener(|this, _, _, cx| this.run(Command::StageAll, cx)))
+        });
+        let unstaged_body = v_flex()
             .children(unstaged.iter().map(|e| file_row(e, false, cx)))
             .when(unstaged.len() > 1, |d| {
                 d.child(
@@ -540,19 +507,46 @@ impl RepoView {
                             })),
                     ),
                 )
+            })
+            .when(unstaged.is_empty(), |d| {
+                d.child(empty_hint("没有未暂存的改动", &theme))
             });
-        let staged_list = v_flex()
-            .child(header(
-                format!("已暂存 {}", staged.len()),
-                (!staged.is_empty()).then(|| {
-                    Button::new("unstage-all")
-                        .xsmall()
-                        .ghost()
-                        .label("全部取消暂存")
-                        .on_click(cx.listener(|this, _, _, cx| this.run(Command::UnstageAll, cx)))
-                }),
-            ))
-            .children(staged.iter().map(|e| file_row(e, true, cx)));
+        let unstage_all = (!staged.is_empty()).then(|| {
+            Button::new("unstage-all")
+                .xsmall()
+                .ghost()
+                .label("全部取消暂存")
+                .on_click(cx.listener(|this, _, _, cx| this.run(Command::UnstageAll, cx)))
+        });
+        let staged_body = v_flex()
+            .children(staged.iter().map(|e| file_row(e, true, cx)))
+            .when(staged.is_empty(), |d| {
+                d.child(empty_hint("没有已暂存的改动", &theme))
+            });
+        let scroll = |id: &'static str, body: Div| {
+            div()
+                .id(id)
+                .size_full()
+                .overflow_y_scroll()
+                .child(body)
+                .into_any_element()
+        };
+        let unstaged_panel = self.side_section(
+            "unstaged",
+            Icon::new(IconName::File),
+            format!("未暂存 {}", unstaged.len()),
+            stage_all,
+            scroll("staging-unstaged", unstaged_body),
+            cx,
+        );
+        let staged_panel = self.side_section(
+            "staged",
+            Icon::new(IconName::File),
+            format!("已暂存 {}", staged.len()),
+            unstage_all,
+            scroll("staging-staged", staged_body),
+            cx,
+        );
 
         let amend = self.amend;
         let commit_box = v_flex()
@@ -598,20 +592,7 @@ impl RepoView {
                     ),
             );
 
-        v_flex()
-            .when(expanded, |d| d.flex_1())
-            .when(!expanded, |d| d.h(px(380.)))
-            .min_h_0()
-            .child(
-                div()
-                    .id("staging-lists")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .child(unstaged_list)
-                    .child(staged_list),
-            )
-            .child(commit_box)
+        (unstaged_panel, staged_panel, commit_box.into_any_element())
     }
 
     pub(crate) fn confirm_discard(

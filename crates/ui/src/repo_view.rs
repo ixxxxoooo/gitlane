@@ -34,6 +34,8 @@ pub struct RepoView {
     /// 搜索结果中当前定位到第几个。
     pub(crate) search_cursor: usize,
     pub(crate) collapsed: HashSet<String>,
+    /// 右栏收起的面板("details" / "unstaged" / "staged")。
+    pub(crate) side_collapsed: HashSet<&'static str>,
     /// 左侧引用树顶部的筛选框。
     pub(crate) sidebar_filter: Entity<InputState>,
     pub(crate) sidebar_rows: std::rc::Rc<Vec<crate::sidebar::SidebarSection>>,
@@ -100,6 +102,7 @@ impl RepoView {
             diff_cache: None,
             search_cursor: 0,
             collapsed: HashSet::new(),
+            side_collapsed: HashSet::new(),
             sidebar_filter,
             sidebar_rows: Default::default(),
             sidebar_scrolls: (0..crate::sidebar::SECTION_COUNT)
