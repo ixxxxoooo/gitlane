@@ -1,10 +1,12 @@
 //! 应用层:仓库状态、命令分发、任务调度与设置。
 //!
+//! - `avatar`:作者头像的联网查询与本地缓存(走系统 curl);
 //! - `command`:写操作的统一描述与同步执行(可脱离 GPUI 测试);
 //! - `repo_model`:单仓库状态 Entity,负责后台加载、命令排队、撤销栈、文件监听防抖;
 //! - `update`:检查更新、下载校验、重启替换(走系统 curl,可脱离 GPUI 测试);
 //! - `workspace`:多仓库标签、设置、自动 fetch 与全局 git 配置。
 
+pub mod avatar;
 pub mod command;
 pub mod repo_model;
 pub mod search;

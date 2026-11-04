@@ -34,6 +34,8 @@ pub struct RepoView {
     /// 搜索结果中当前定位到第几个。
     pub(crate) search_cursor: usize,
     pub(crate) collapsed: HashSet<String>,
+    /// 作者头像缓存:邮箱 → 本地头像文件(`None` 表示没有头像或还没查到)。
+    pub(crate) avatars: std::collections::HashMap<String, Option<std::path::PathBuf>>,
     /// 右栏收起的面板("details" / "unstaged" / "staged")。
     pub(crate) side_collapsed: HashSet<&'static str>,
     /// 左侧引用树顶部的筛选框。
@@ -102,6 +104,7 @@ impl RepoView {
             diff_cache: None,
             search_cursor: 0,
             collapsed: HashSet::new(),
+            avatars: Default::default(),
             side_collapsed: HashSet::new(),
             sidebar_filter,
             sidebar_rows: Default::default(),
@@ -110,6 +113,40 @@ impl RepoView {
                 .collect(),
             _subscriptions: subscriptions,
         }
+    }
+
+    /// 某个邮箱的头像文件。第一次遇到时在后台联网查询(或读本地缓存),查完再刷新界面;
+    /// 查询期间、查不到或关闭了联网获取时返回 `None`,界面显示首字母。
+    pub(crate) fn avatar_for(
+        &mut self,
+        email: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<std::path::PathBuf> {
+        if let Some(found) = self.avatars.get(email) {
+            return found.clone();
+        }
+        let enabled = self
+            .workspace
+            .upgrade()
+            .is_some_and(|ws| ws.read(cx).avatars_enabled());
+        if !enabled || email.trim().is_empty() {
+            return None;
+        }
+        // 先占位,避免每次渲染都重复发起查询
+        self.avatars.insert(email.to_string(), None);
+        let email = email.to_string();
+        cx.spawn(async move |this, cx| {
+            let e = email.clone();
+            let path = cx
+                .background_spawn(async move { app::avatar::fetch(&app::avatar::cache_dir(), &e) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.avatars.insert(email, path);
+                cx.notify();
+            });
+        })
+        .detach();
+        None
     }
 
     pub fn focus_handle(&self) -> &FocusHandle {

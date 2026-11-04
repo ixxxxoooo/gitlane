@@ -173,6 +173,11 @@ impl Workspace {
         }
     }
 
+    /// 是否联网获取头像:设置里打开,且不是测试用的无持久化模式(测试不联网)。
+    pub fn avatars_enabled(&self) -> bool {
+        self.settings.fetch_avatars && !self.ephemeral
+    }
+
     pub fn set_theme(&mut self, theme: ThemePreference, cx: &mut Context<Self>) {
         self.update_settings(cx, |s| s.theme = theme);
     }

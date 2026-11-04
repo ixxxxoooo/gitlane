@@ -175,6 +175,20 @@ impl SettingsView {
                         "启动时和之后每 3 小时检查一次;发现新版本后台下载并校验,重启更新由你确认。也可以在菜单里手动“检查更新…”。",
                     ),
                 ),
+                SettingGroup::new().title("头像").item(
+                    SettingItem::new(
+                        "联网获取作者头像",
+                        switch(
+                            ws,
+                            true,
+                            |s| s.fetch_avatars,
+                            |s, v| s.fetch_avatars = v,
+                        ),
+                    )
+                    .description(
+                        "按提交邮箱查询:GitHub noreply 邮箱取对应账号头像,其余邮箱查 Gravatar;结果缓存在本地,查不到时显示首字母。关闭后不联网。",
+                    ),
+                ),
                 SettingGroup::new().title("同步").item(
                     SettingItem::new(
                         "自动 fetch",

@@ -64,6 +64,8 @@ pub struct Settings {
     pub terminal: TerminalApp,
     /// 启动时(之后每 3 小时)检查更新,发现新版本后台下载并校验;重启更新由用户确认。
     pub auto_update_check: bool,
+    /// 联网获取作者头像(GitHub 账号头像或 Gravatar),关闭后只显示首字母。
+    pub fetch_avatars: bool,
     /// 左侧引用树宽度(逻辑像素),拖动分隔条调整;窗口缩放不改变它。
     pub sidebar_width: f32,
     /// 右侧详情与暂存区宽度。
@@ -83,6 +85,7 @@ impl Default for Settings {
             auto_fetch_minutes: 0,
             terminal: TerminalApp::Terminal,
             auto_update_check: true,
+            fetch_avatars: true,
             sidebar_width: 240.,
             side_panel_width: 360.,
         }
@@ -150,6 +153,7 @@ mod tests {
         assert_eq!(s.auto_fetch_minutes, 0);
         assert_eq!(s.terminal, TerminalApp::Terminal);
         assert!(s.auto_update_check, "旧设置没有这个键,默认自动检查更新");
+        assert!(s.fetch_avatars, "旧设置没有这个键,默认联网获取头像");
     }
 
     #[test]

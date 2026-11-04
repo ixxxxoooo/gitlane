@@ -97,6 +97,7 @@ impl RepoView {
             .files
             .iter()
             .fold((0, 0), |(a, d), f| (a + f.additions, d + f.deletions));
+        let avatar = self.avatar_for(&detail.info.email, cx);
         let initial = detail
             .info
             .author
@@ -140,10 +141,12 @@ impl RepoView {
                 h_flex()
                     .gap_2()
                     .child(
+                        // 有联网查到的头像就显示头像,否则是按作者名取色的首字母圆圈
                         div()
                             .size(px(28.))
                             .flex_none()
                             .rounded_full()
+                            .overflow_hidden()
                             .flex()
                             .items_center()
                             .justify_center()
@@ -151,7 +154,12 @@ impl RepoView {
                             .text_color(gpui::white())
                             .text_xs()
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child(initial),
+                            .map(|d| match avatar {
+                                Some(path) => {
+                                    d.child(img(path).size_full().object_fit(ObjectFit::Cover))
+                                }
+                                None => d.child(initial),
+                            }),
                     )
                     .child(
                         v_flex()
