@@ -382,13 +382,13 @@ impl GitlaneWindow {
             let is_active = i == active;
             let group = SharedString::from(format!("tab-group-{i}"));
             // 胶囊式标签:当前标签浅灰底、字重加粗,其余只有弱化文字。
-            // 关闭按钮默认不显示也不占位,悬停时才浮在标签右侧出现,同时把名字淡化,避免文字与按钮叠在一起
+            // 关闭按钮默认隐藏但位置预留(标签宽度不随悬停变化),鼠标放上去才显示
             h_flex()
                 .id(("tab", i))
                 .group(group.clone())
-                .relative()
                 .h(px(26.))
-                .px_2p5()
+                .pl_2p5()
+                .pr_1()
                 .gap_1p5()
                 .rounded_lg()
                 .text_sm()
@@ -403,18 +403,11 @@ impl GitlaneWindow {
                         .hover(|s| s.bg(theme.muted.opacity(0.5)))
                 })
                 .child(Icon::from(gpui::assets::IconName::FolderGit2).xsmall())
-                .child(
-                    div()
-                        .group_hover(group.clone(), |s| s.opacity(0.35))
-                        .child(r.name.clone()),
-                )
+                .child(r.name.clone())
                 .child(
                     Button::new(("close-tab", i))
                         .xsmall()
                         .ghost()
-                        .absolute()
-                        .right(px(3.))
-                        .top(px(3.))
                         .icon(IconName::Close)
                         .invisible()
                         .group_hover(group.clone(), |s| s.visible())
