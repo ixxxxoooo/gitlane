@@ -4,6 +4,7 @@ use crate::repo_view::RepoView;
 use app::Command;
 use gitcore::{RefInfo, RefKind};
 use gpui::base::TestSupportExt as _;
+use gpui::component::input::Input;
 use gpui::component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui::component::{ActiveTheme, Icon, IconName, Sizable, h_flex};
 use gpui::prelude::*;
@@ -38,13 +39,26 @@ pub(crate) enum SidebarRow {
     },
 }
 
-/// 按当前折叠状态拍平引用树。
-pub(crate) fn flatten_refs(refs: &gitcore::Refs, collapsed: &HashSet<String>) -> Vec<SidebarRow> {
+/// 按当前折叠状态拍平引用树。`filter` 非空时只保留名称包含它的引用(不区分大小写),
+/// 此时忽略折叠状态、全部展开,并隐藏没有命中的分区。
+pub(crate) fn flatten_refs(
+    refs: &gitcore::Refs,
+    collapsed: &HashSet<String>,
+    filter: &str,
+) -> Vec<SidebarRow> {
     let mut rows = Vec::new();
+    let filter = filter.trim().to_lowercase();
+    let filtering = !filter.is_empty();
+    let no_collapse = HashSet::new();
+    let collapsed = if filtering { &no_collapse } else { collapsed };
     let tree = |rows: &mut Vec<SidebarRow>, scope: &str, title: &'static str, kind: RefKind| {
         let items: Vec<usize> = (0..refs.refs.len())
             .filter(|&i| refs.refs[i].kind == kind)
+            .filter(|&i| !filtering || refs.refs[i].short.to_lowercase().contains(&filter))
             .collect();
+        if filtering && items.is_empty() {
+            return;
+        }
         rows.push(SidebarRow::Section {
             title,
             count: items.len(),
@@ -93,12 +107,17 @@ pub(crate) fn flatten_refs(refs: &gitcore::Refs, collapsed: &HashSet<String>) ->
     tree(&mut rows, "local", "本地分支", RefKind::Local);
     tree(&mut rows, "remote", "远程", RefKind::Remote);
     tree(&mut rows, "tag", "标签", RefKind::Tag);
-    rows.push(SidebarRow::Section {
-        title: "Stash",
-        count: refs.stashes.len(),
-    });
-    if !collapsed.contains("Stash") {
-        rows.extend((0..refs.stashes.len()).map(|pos| SidebarRow::Stash { pos }));
+    let stashes: Vec<usize> = (0..refs.stashes.len())
+        .filter(|&i| !filtering || refs.stashes[i].message.to_lowercase().contains(&filter))
+        .collect();
+    if !filtering || !stashes.is_empty() {
+        rows.push(SidebarRow::Section {
+            title: "Stash",
+            count: stashes.len(),
+        });
+        if !collapsed.contains("Stash") {
+            rows.extend(stashes.into_iter().map(|pos| SidebarRow::Stash { pos }));
+        }
     }
     rows
 }
@@ -112,7 +131,11 @@ impl RepoView {
     ) -> impl IntoElement + use<> {
         let theme = cx.theme().clone();
         self.sidebar_rows = match self.repo.read(cx).data.as_ref() {
-            Some(data) => Rc::new(flatten_refs(&data.refs, &self.collapsed)),
+            Some(data) => Rc::new(flatten_refs(
+                &data.refs,
+                &self.collapsed,
+                self.sidebar_filter.read(cx).value().as_ref(),
+            )),
             None => Rc::default(),
         };
         let count = self.sidebar_rows.len();
@@ -121,7 +144,8 @@ impl RepoView {
             .w(width)
             .flex_none()
             .h_full()
-            .py_1()
+            .flex()
+            .flex_col()
             .bg(theme.sidebar)
             .on_action(cx.listener(|this, a: &StashAction, _, cx| {
                 this.run(
@@ -141,15 +165,25 @@ impl RepoView {
                 cx.listener(|this, a: &RefAction, window, cx| this.on_ref_action(a, window, cx)),
             )
             .child(
-                uniform_list(
-                    "sidebar",
-                    count,
-                    cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-                        this.render_sidebar_rows(range, cx)
-                    }),
-                )
-                .track_scroll(&self.sidebar_scroll)
-                .size_full(),
+                div()
+                    .flex_none()
+                    .px_2()
+                    .pt_2()
+                    .pb_1()
+                    .child(Input::new(&self.sidebar_filter).small().cleanable(true)),
+            )
+            .child(
+                div().flex_1().min_h_0().child(
+                    uniform_list(
+                        "sidebar",
+                        count,
+                        cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                            this.render_sidebar_rows(range, cx)
+                        }),
+                    )
+                    .track_scroll(&self.sidebar_scroll)
+                    .size_full(),
+                ),
             )
             .id("sidebar")
             .test_support()
@@ -215,7 +249,7 @@ impl RepoView {
             .gap_1p5()
             .text_xs()
             .font_weight(FontWeight::SEMIBOLD)
-            .text_color(theme.muted_foreground)
+            .text_color(theme.foreground.opacity(0.8))
             .cursor_pointer()
             // 第一个分区之外用细线分开,折叠后也能看清分区边界
             .when(title != "本地分支", |d| {
@@ -230,9 +264,14 @@ impl RepoView {
                 })
                 .xsmall(),
             )
-            .child(icon.xsmall())
+            .child(icon.xsmall().text_color(theme.muted_foreground))
             .child(div().flex_1().child(title))
-            .child(count_chip(count, &theme))
+            .child(
+                div()
+                    .font_weight(FontWeight::NORMAL)
+                    .text_color(theme.muted_foreground)
+                    .child(count.to_string()),
+            )
             .on_click(cx.listener(move |this, _, _, cx| this.toggle_collapsed(title, cx)))
     }
 
@@ -336,31 +375,25 @@ impl RepoView {
             RefKind::Remote => Icon::from(IconName::Globe),
             RefKind::Tag => Icon::from(gpui::assets::IconName::Tag),
         };
-        let ab = r
-            .ahead_behind
-            .filter(|(a, b)| *a > 0 || *b > 0)
-            .map(|(a, b)| {
-                let mut s = String::new();
-                if a > 0 {
-                    s.push_str(&format!("↑{a}"));
-                }
-                if b > 0 {
-                    s.push_str(&format!(" ↓{b}"));
-                }
-                s
-            });
+        let ab = r.ahead_behind.filter(|(a, b)| *a > 0 || *b > 0);
         let name_for_menu = short.clone();
         h_flex()
             .id(SharedString::from(r.name.clone()))
-            .pl(px(8. + 12. * depth as f32))
+            // 左侧 2px 竖条只在当前分支上着色,其余透明,保证各行内容对齐
+            .border_l_2()
+            .border_color(if r.is_head {
+                theme.primary
+            } else {
+                gpui::transparent_black()
+            })
+            .pl(px(6. + 12. * depth as f32))
             .pr_2()
             .h(px(ROW_HEIGHT))
-            .gap_1()
+            .gap_1p5()
             .text_sm()
-            .rounded_sm()
             .when(r.is_head, |d| {
-                d.font_weight(FontWeight::SEMIBOLD)
-                    .text_color(theme.primary)
+                d.font_weight(FontWeight::MEDIUM)
+                    .bg(theme.primary.opacity(0.1))
             })
             .when(selected, |d| d.bg(theme.list_active))
             .when(!selected, |d| d.hover(|s| s.bg(theme.list_hover)))
@@ -377,12 +410,14 @@ impl RepoView {
                     .child(label)
                     .test_support(),
             )
-            .children(ab.map(|s| {
-                div()
+            .children(ab.map(|(a, b)| {
+                h_flex()
+                    .gap_1()
                     .text_xs()
                     .font_weight(FontWeight::NORMAL)
                     .text_color(theme.muted_foreground)
-                    .child(s)
+                    .when(a > 0, |d| d.child(format!("↑{a}")))
+                    .when(b > 0, |d| d.child(format!("↓{b}")))
             }))
             .on_mouse_down(
                 MouseButton::Left,
@@ -478,20 +513,6 @@ impl RepoView {
             RefAction::NewBranchFrom(rev) => self.prompt_new_branch(rev, window, cx),
         }
     }
-}
-
-/// 分区标题右侧的数量。
-fn count_chip(count: usize, theme: &gpui::component::Theme) -> impl IntoElement + use<> {
-    div()
-        .px_1p5()
-        .min_w(px(20.))
-        .flex()
-        .justify_center()
-        .rounded_full()
-        .bg(theme.muted)
-        .text_color(theme.muted_foreground)
-        .font_weight(FontWeight::NORMAL)
-        .child(count.to_string())
 }
 
 fn ref_menu(
@@ -630,7 +651,7 @@ mod tests {
         };
         let mut collapsed = HashSet::new();
         assert_eq!(
-            shape(&flatten_refs(&refs, &collapsed)),
+            shape(&flatten_refs(&refs, &collapsed, "")),
             vec![
                 "# 本地分支 3",
                 "  main",
@@ -645,10 +666,15 @@ mod tests {
                 "# Stash 0",
             ]
         );
+        // 筛选:忽略折叠、全部展开,隐藏没有命中的分区
+        assert_eq!(
+            shape(&flatten_refs(&refs, &collapsed, "MAIN")),
+            vec!["# 本地分支 1", "  main", "# 远程 1", "+ origin", "    main"]
+        );
         collapsed.insert("local:feature".to_string());
         collapsed.insert("标签".to_string());
         assert_eq!(
-            shape(&flatten_refs(&refs, &collapsed)),
+            shape(&flatten_refs(&refs, &collapsed, "")),
             vec![
                 "# 本地分支 3",
                 "  main",

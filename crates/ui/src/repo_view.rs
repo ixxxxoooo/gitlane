@@ -34,6 +34,8 @@ pub struct RepoView {
     /// 搜索结果中当前定位到第几个。
     pub(crate) search_cursor: usize,
     pub(crate) collapsed: HashSet<String>,
+    /// 左侧引用树顶部的筛选框。
+    pub(crate) sidebar_filter: Entity<InputState>,
     pub(crate) sidebar_rows: std::rc::Rc<Vec<crate::sidebar::SidebarRow>>,
     pub(crate) sidebar_scroll: UniformListScrollHandle,
     _subscriptions: Vec<Subscription>,
@@ -48,6 +50,8 @@ impl RepoView {
     ) -> Self {
         let search =
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索提交信息 / 作者 / SHA"));
+        let sidebar_filter =
+            cx.new(|cx| InputState::new(window, cx).placeholder("筛选分支 / 标签…"));
         let message = cx.new(|cx| TextareaState::new(window, cx).placeholder("提交信息(⌘↵ 提交)"));
 
         let subscriptions = vec![
@@ -56,6 +60,11 @@ impl RepoView {
                 cx.notify();
             }),
             cx.subscribe_in(&repo, window, Self::on_repo_event),
+            cx.subscribe(&sidebar_filter, |_, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            }),
             cx.subscribe_in(
                 &search,
                 window,
@@ -90,6 +99,7 @@ impl RepoView {
             diff_cache: None,
             search_cursor: 0,
             collapsed: HashSet::new(),
+            sidebar_filter,
             sidebar_rows: Default::default(),
             sidebar_scroll: UniformListScrollHandle::new(),
             _subscriptions: subscriptions,
