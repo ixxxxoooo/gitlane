@@ -10,6 +10,7 @@ pub mod cli;
 pub mod config;
 pub mod diff;
 mod error;
+pub mod highlight;
 pub mod ops;
 pub mod patch;
 pub mod repo;

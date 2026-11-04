@@ -1,6 +1,6 @@
 //! 用临时仓库做的集成测试:读路径、暂存、提交、撤销。
 
-use gitcore::diff::{DEFAULT_CONTEXT_LINES, DiffTarget, file_diff};
+use gitcore::diff::{DEFAULT_CONTEXT_LINES, DiffTarget, file_diff, side_texts};
 use gitcore::ops::{CommitOptions, ResetMode};
 use gitcore::patch::PatchDirection;
 use gitcore::undo::{self, UndoStack};
@@ -166,6 +166,42 @@ fn line_level_stage_and_unstage() {
         .apply_selection(&staged, 0, Some(&sel), PatchDirection::Unstage)
         .unwrap();
     assert_eq!(f.index_content("a.txt"), "one\nTWO\nthree\nfour\n");
+}
+
+#[test]
+fn side_texts_for_all_targets() {
+    let f = Fixture::new();
+    f.commit_file("a.js", "let a = 1;\n", "base");
+    f.commit_file("a.js", "let a = 2;\n", "change");
+    let repo = f.repo();
+    let head = repo.raw().head().unwrap().target().unwrap();
+    let diff = |t| file_diff(&repo, t, "a.js", false, DEFAULT_CONTEXT_LINES).unwrap();
+
+    let d = diff(DiffTarget::Commit(head));
+    let (old, new) = side_texts(&repo, DiffTarget::Commit(head), &d, 1 << 20);
+    assert_eq!(old.as_deref(), Some("let a = 1;\n"));
+    assert_eq!(new.as_deref(), Some("let a = 2;\n"));
+
+    // 暂存区:HEAD → 索引;工作区:索引 → 文件
+    f.write("a.js", "let a = 3;\n");
+    f.git.stage_paths(&["a.js"]).unwrap();
+    f.write("a.js", "let a = 4;\n");
+    let d = diff(DiffTarget::Staged);
+    let (old, new) = side_texts(&repo, DiffTarget::Staged, &d, 1 << 20);
+    assert_eq!(old.as_deref(), Some("let a = 2;\n"));
+    assert_eq!(new.as_deref(), Some("let a = 3;\n"));
+    let d = diff(DiffTarget::Unstaged);
+    let (old, new) = side_texts(&repo, DiffTarget::Unstaged, &d, 1 << 20);
+    assert_eq!(old.as_deref(), Some("let a = 3;\n"));
+    assert_eq!(new.as_deref(), Some("let a = 4;\n"));
+
+    // 新文件只有新侧;超过大小上限的一侧不读
+    f.write("b.js", "x\n");
+    let d = file_diff(&repo, DiffTarget::Unstaged, "b.js", false, 3).unwrap();
+    let (old, new) = side_texts(&repo, DiffTarget::Unstaged, &d, 1 << 20);
+    assert!(old.is_none());
+    assert_eq!(new.as_deref(), Some("x\n"));
+    assert_eq!(side_texts(&repo, DiffTarget::Unstaged, &d, 1), (None, None));
 }
 
 #[test]

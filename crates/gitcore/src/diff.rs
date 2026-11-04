@@ -258,6 +258,58 @@ pub fn file_diff(
     Ok(out)
 }
 
+/// 读取 diff 两侧的完整文件内容(旧侧, 新侧),供语法高亮从文件开头解析。
+/// 新增 / 删除的文件只有一侧;读不到、二进制或超过 `max_bytes` 的一侧为 `None`。
+pub fn side_texts(
+    repo: &Repo,
+    target: DiffTarget,
+    file: &FileDiff,
+    max_bytes: usize,
+) -> (Option<String>, Option<String>) {
+    let raw = repo.raw();
+    let old_path = file.old_path.as_deref().unwrap_or(&file.path);
+    let blob_text = |id: Oid| -> Option<String> {
+        let blob = raw.find_blob(id).ok()?;
+        (!blob.is_binary() && blob.size() <= max_bytes)
+            .then(|| String::from_utf8_lossy(blob.content()).into_owned())
+    };
+    let in_tree = |tree: Option<git2::Tree<'_>>, path: &str| {
+        let id = tree?.get_path(std::path::Path::new(path)).ok()?.id();
+        blob_text(id)
+    };
+    let in_index = |path: &str| {
+        let index = raw.index().ok()?;
+        let id = index.get_path(std::path::Path::new(path), 0)?.id;
+        blob_text(id)
+    };
+    let head_tree = || raw.head().ok().and_then(|h| h.peel_to_tree().ok());
+
+    let (old, new) = match target {
+        DiffTarget::Commit(id) => {
+            let Ok(c) = raw.find_commit(id) else {
+                return (None, None);
+            };
+            let parent = c.parent(0).ok().and_then(|p| p.tree().ok());
+            (
+                in_tree(parent, old_path),
+                in_tree(c.tree().ok(), &file.path),
+            )
+        }
+        DiffTarget::Staged => (in_tree(head_tree(), old_path), in_index(&file.path)),
+        DiffTarget::Unstaged => {
+            let new = std::fs::read(repo.workdir().join(&file.path))
+                .ok()
+                .filter(|b| b.len() <= max_bytes && !b.contains(&0))
+                .map(|b| String::from_utf8_lossy(&b).into_owned());
+            (in_index(old_path), new)
+        }
+    };
+    (
+        old.filter(|_| !file.is_new),
+        new.filter(|_| !file.is_deleted),
+    )
+}
+
 /// 把 hunk 中相邻的“删除块 + 新增块”逐行配对,返回 (删除行下标, 新增行下标)。
 /// 配对后的两行用于字符级差异和并排视图对齐。
 pub fn pair_changed_lines(hunk: &Hunk) -> Vec<(usize, usize)> {

@@ -11,6 +11,8 @@ thiserror.workspace = true
 similar.workspace = true
 notify.workspace = true
 log.workspace = true
+syntect.workspace = true
+two-face.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
