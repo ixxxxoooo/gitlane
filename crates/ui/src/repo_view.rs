@@ -2,7 +2,7 @@
 //! 具体区域的渲染拆在 sidebar / graph_view / diff_view / side_panel 中,都是 `impl RepoView`。
 
 use crate::actions::*;
-use crate::diff_view::DiffCache;
+use crate::diff_stage::DiffCache;
 use crate::panels::{self, DiffDrag, PanelDrag, PanelSide};
 use app::{Command, NoticeKind, RepoEvent, RepoModel, Selection, Workspace};
 use gitcore::RepoState;
@@ -23,13 +23,15 @@ pub struct RepoView {
     pub(crate) focus: FocusHandle,
     pub(crate) graph_focus: FocusHandle,
     pub(crate) graph_scroll: UniformListScrollHandle,
-    pub(crate) diff_scroll: UniformListScrollHandle,
+    /// diff 组件的状态(文件、模式、选区、滚动都在里面)。
+    pub(crate) diff_state: Entity<gpui::component::diff::DiffState>,
+    /// 组件当前按哪种主题配的高亮色。
+    pub(crate) diff_dark: Option<bool>,
     pub(crate) search: Entity<InputState>,
     pub(crate) message: Entity<TextareaState>,
     pub(crate) amend: bool,
     /// 当前工作区 diff 中选中的行:(hunk, 行)。
     pub(crate) selected_lines: BTreeSet<(usize, usize)>,
-    pub(crate) last_clicked_line: Option<(usize, usize)>,
     pub(crate) diff_cache: Option<DiffCache>,
     /// 搜索结果中当前定位到第几个。
     pub(crate) search_cursor: usize,
@@ -66,7 +68,14 @@ impl RepoView {
             cx.new(|cx| InputState::new(window, cx).placeholder("筛选分支 / 标签…"));
         let message = cx.new(|cx| TextareaState::new(window, cx).placeholder("提交信息(⌘↵ 提交)"));
 
+        let diff_state = cx.new(|cx| {
+            gpui::component::diff::DiffState::new(Vec::new(), cx).with_context_lines(None)
+        });
         let subscriptions = vec![
+            cx.subscribe(
+                &diff_state,
+                |this, _, e: &gpui::component::diff::DiffEvent, cx| this.on_diff_event(e, cx),
+            ),
             cx.observe(&repo, |this, _, cx| {
                 this.prune_selection(cx);
                 cx.notify();
@@ -102,12 +111,12 @@ impl RepoView {
             focus: cx.focus_handle(),
             graph_focus: cx.focus_handle(),
             graph_scroll: UniformListScrollHandle::new(),
-            diff_scroll: UniformListScrollHandle::new(),
+            diff_state,
+            diff_dark: None,
             search,
             message,
             amend: false,
             selected_lines: BTreeSet::new(),
-            last_clicked_line: None,
             diff_cache: None,
             search_cursor: 0,
             collapsed: saved.sidebar_collapsed.iter().cloned().collect(),
@@ -198,7 +207,6 @@ impl RepoView {
             .map(|f| std::sync::Arc::as_ptr(f) as usize);
         if self.diff_cache.as_ref().map(|c| c.key) != key {
             self.selected_lines.clear();
-            self.last_clicked_line = None;
         }
     }
 
@@ -418,7 +426,6 @@ impl RepoView {
                 ws.set_split_diff(split, cx)
             });
         }
-        self.diff_cache = None;
         cx.notify();
     }
 

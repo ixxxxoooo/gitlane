@@ -53,66 +53,8 @@ pub fn file_tint(hue: f32, dark: bool) -> Hsla {
     }
 }
 
-pub struct DiffColors {
-    pub added_bg: Hsla,
-    pub added_word: Hsla,
-    pub deleted_bg: Hsla,
-    pub deleted_word: Hsla,
-    /// 改动行行号栏,比行底色略深,扫一眼就能看出改动范围。
-    pub added_gutter: Hsla,
-    pub deleted_gutter: Hsla,
-    pub added_sign: Hsla,
-    pub deleted_sign: Hsla,
-    pub hunk_bg: Hsla,
-    pub hunk_fg: Hsla,
-    pub selected_bg: Hsla,
-    pub added_mark: Hsla,
-    pub deleted_mark: Hsla,
-}
-
 fn hex(rgb: u32) -> Hsla {
     gpui::rgb(rgb).into()
-}
-
-fn hexa(rgb: u32, alpha: f32) -> Hsla {
-    hex(rgb).opacity(alpha)
-}
-
-/// 亮色取自参考截图(浅粉 / 浅绿行底,字符级改动用更深的同色),暗色是同一色相的半透明版本。
-pub fn diff_colors(dark: bool) -> DiffColors {
-    if dark {
-        DiffColors {
-            added_bg: hexa(0x2ea043, 0.15),
-            added_word: hexa(0x2ea043, 0.40),
-            deleted_bg: hexa(0xf85149, 0.15),
-            deleted_word: hexa(0xf85149, 0.40),
-            added_gutter: hexa(0x2ea043, 0.25),
-            deleted_gutter: hexa(0xf85149, 0.25),
-            added_sign: hex(0x56d364),
-            deleted_sign: hex(0xf47067),
-            hunk_bg: hexa(0x388bfd, 0.12),
-            hunk_fg: hex(0x8b949e),
-            selected_bg: hexa(0x388bfd, 0.35),
-            added_mark: hex(0x3fb950),
-            deleted_mark: hex(0xf85149),
-        }
-    } else {
-        DiffColors {
-            added_bg: hex(0xe8f6ef),
-            added_word: hex(0xc0e6d4),
-            deleted_bg: hex(0xfbe8e6),
-            deleted_word: hex(0xf4c1b8),
-            added_gutter: hex(0xd3eee0),
-            deleted_gutter: hex(0xf8d5d0),
-            added_sign: hex(0x1a7f37),
-            deleted_sign: hex(0xcf222e),
-            hunk_bg: hex(0xeef4fb),
-            hunk_fg: hex(0x57606a),
-            selected_bg: hexa(0x0969da, 0.22),
-            added_mark: hex(0x2da44e),
-            deleted_mark: hex(0xe5534b),
-        }
-    }
 }
 
 /// 语法高亮名(见 `gitcore::highlight`)对应的文字颜色,`None` 用默认前景色。

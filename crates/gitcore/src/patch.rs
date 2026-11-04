@@ -108,6 +108,40 @@ pub fn build_patch(
     Some(out)
 }
 
+/// 把一个文件的完整 diff 还原成 git 风格的补丁文本,供 diff 视图组件解析显示。
+///
+/// 与 `build_patch` 不同:保留所有 hunk 与所有行,不做暂存用的裁剪。
+pub fn display_patch(file: &FileDiff) -> String {
+    let old_path = file.old_path.as_deref().unwrap_or(&file.path);
+    let mut out = format!("diff --git a/{old_path} b/{}\n", file.path);
+    let old_side = if file.is_new {
+        out.push_str("new file mode 100644\n");
+        "/dev/null".to_string()
+    } else {
+        format!("a/{old_path}")
+    };
+    let new_side = if file.is_deleted {
+        out.push_str("deleted file mode 100644\n");
+        "/dev/null".to_string()
+    } else {
+        format!("b/{}", file.path)
+    };
+    out.push_str(&format!("--- {old_side}\n+++ {new_side}\n"));
+    for hunk in &file.hunks {
+        out.push_str(hunk.header.trim_end());
+        out.push('\n');
+        for line in &hunk.lines {
+            out.push(line.kind.prefix());
+            out.push_str(&line.text);
+            out.push('\n');
+            if line.no_newline {
+                out.push_str("\\ No newline at end of file\n");
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,5 +211,16 @@ mod tests {
     fn nothing_selected() {
         let sel: BTreeSet<usize> = [0].into();
         assert!(build_patch(&sample(), 0, Some(&sel), PatchDirection::Stage).is_none());
+    }
+
+    #[test]
+    fn display_patch_keeps_every_hunk_and_line() {
+        let text = display_patch(&sample());
+        assert!(text.starts_with(
+            "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n"
+        ));
+        let body: Vec<&str> = text.lines().skip(4).collect();
+        assert_eq!(body.len(), sample().hunks[0].lines.len());
+        assert!(body.iter().all(|l| l.starts_with([' ', '+', '-'])));
     }
 }

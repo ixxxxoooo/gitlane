@@ -117,6 +117,30 @@ pub fn highlight_diff(file: &FileDiff, old: Option<&str>, new: Option<&str>) -> 
     Some(DiffSyntax { hunks })
 }
 
+/// 给一段独立的源码文本算高亮(diff 视图组件按 hunk 的一侧调用),`path` 用来识别语言。
+///
+/// 返回按位置排好、互不重叠的 (字节区间, 高亮名),区间相对整段 `text`;不认识的语言或过长的文本返回空。
+pub fn highlight_source(path: &str, text: &str) -> Vec<SyntaxSpan> {
+    let Some(syntax) = find_syntax(path) else {
+        return Vec::new();
+    };
+    if text.len() > FULL_PARSE_MAX_BYTES {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut start = 0;
+    let lines = text.split('\n');
+    for (line, spans) in lines.clone().zip(parse_lines(syntax, lines)) {
+        out.extend(
+            spans
+                .into_iter()
+                .map(|(r, n)| (start + r.start..start + r.end, n)),
+        );
+        start += line.len() + 1;
+    }
+    out
+}
+
 /// 从头解析整个文件,只保留 `need` 里的行(1 起)。解析到最后一个需要的行就停。
 #[allow(clippy::type_complexity)]
 fn spans_of_file<'a>(
@@ -434,5 +458,20 @@ mod tests {
                 .all(|(r, _)| r.end <= "let a = 1;".len())
         );
         assert!(names("let a = 1;", s.line(0, 0)).contains(&("1", "number")));
+    }
+
+    #[test]
+    fn highlight_source_offsets_are_relative_to_the_whole_text() {
+        let text = "// c\nfn main() {}";
+        let spans = highlight_source("a.rs", text);
+        let fn_at = text.find("fn").unwrap();
+        assert!(
+            spans
+                .iter()
+                .any(|(r, n)| *n == "keyword" && r.start == fn_at)
+        );
+        assert!(spans.iter().all(|(r, _)| r.end <= text.len()));
+        // 不认识的语言没有高亮
+        assert!(highlight_source("a.unknown-ext", text).is_empty());
     }
 }

@@ -106,7 +106,13 @@ async fn commit_diff_lines_can_be_selected_and_copied(cx: &mut TestAppContext) {
     cx.update(|cx| {
         view.update(cx, |v, cx| {
             assert_eq!(v.selected_text(), None, "没选时没有可复制的内容");
-            v.toggle_line(0, 0, false, cx);
+            let range = gpui::component::diff::DiffLineRange::new(
+                "main.rs",
+                gpui::component::diff::DiffSide::Modified,
+                1,
+                1,
+            );
+            v.select_range(Some(&range), cx);
             assert_eq!(v.selected_text().as_deref(), Some("fn main() {"));
         })
     });

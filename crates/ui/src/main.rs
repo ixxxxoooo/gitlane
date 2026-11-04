@@ -8,6 +8,7 @@ mod assets;
 mod colors;
 mod copy_menu;
 mod dialogs;
+mod diff_stage;
 mod diff_view;
 mod file_icons;
 mod format;
