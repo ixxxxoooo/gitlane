@@ -378,7 +378,7 @@ impl GitlaneWindow {
                     d.text_color(theme.muted_foreground)
                         .hover(|s| s.bg(theme.muted.opacity(0.5)))
                 })
-                .child(Icon::new(IconName::Folder).xsmall())
+                .child(Icon::from(gpui::assets::IconName::FolderGit2).xsmall())
                 .child(r.name.clone())
                 .child(
                     Button::new(("close-tab", i))

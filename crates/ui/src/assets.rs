@@ -12,6 +12,7 @@ gpui::assets::icon_assets!(
         Briefcase,
         Clock,
         File,
+        FolderGit2,
         FileArchive,
         FileBraces,
         FileCode,
