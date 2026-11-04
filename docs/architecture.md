@@ -21,7 +21,7 @@
 |---|---|
 | `repo.rs` | **读路径**(git2):`history`(拓扑+时间排序,附父提交行号)、`refs`(分支/远程/标签/stash,领先落后)、`status`、`commit_detail` |
 | `diff.rs` | 单文件 diff(提交 / 已暂存 / 未暂存)、大文件保护(`LARGE_DIFF_LINES`)、删除块与新增块配对、字符级差异(`similar`) |
-| `highlight.rs` | diff 语法高亮(syntect):从文件开头解析到最后一个改动行,只输出 `keyword` / `string` 这类高亮名,颜色由 ui 的 `colors.rs` 决定;文件太大或内容对不上时按 hunk 解析 |
+| `highlight.rs` | 源码语法高亮(syntect):`highlight_source` 按路径给一段文本(hunk 的一侧)算高亮,只输出 `keyword` / `string` 这类高亮名,颜色由 ui 的 `colors.rs` 决定 |
 | `patch.rs` | 从 hunk 中挑选部分行生成补丁,支持暂存 / 取消暂存 / 丢弃三个方向 |
 | `config.rs` | 全局 git 配置(`~/.gitconfig`)的读写:身份、pull 方式、提交签名、默认分支名;读写都走系统 `git config`,测试用 `--file` 指向临时文件 |
 | `cli.rs` | **写路径**:调用系统 `git`,`GIT_TERMINAL_PROMPT=0`、`GIT_EDITOR=true`,支持 stdin 与取消(结束子进程) |
@@ -67,7 +67,8 @@
 | `repo_view.rs` | 单仓库视图骨架:工具栏、进行中操作横幅、状态栏、仓库级动作处理 |
 | `sidebar.rs` | 引用树(按前缀分组)、右键菜单 |
 | `graph_view.rs` + `graph_canvas.rs` | 提交图:`uniform_list` 虚拟滚动,每行一个 canvas 画线段与节点 |
-| `diff_view.rs` | 统一 / 并排 diff、语法高亮与字符级差异合成(`merge_highlights`)、minimap、hunk 与行选择 |
+| `diff_view.rs` | diff 头部工具条,把 `FileDiff` 喂给 gpui-component 的 `Diff` 组件(并排 / 统一、拖选、滚动由组件负责),hunk 按钮 |
+| `diff_stage.rs` | 组件选中的行范围换算成 (hunk, 行)、暂存 / 丢弃命令、复制、语法高亮接线 |
 | `side_panel.rs` | 提交详情、暂存区、提交框 |
 | `dialogs.rs` / `palette.rs` | 确认与输入对话框、命令面板 |
 | `settings_view.rs` | 设置窗口(独立窗口,用 gpui-component 的 `setting::Settings`);只调用 `Workspace` 的方法,不直接调 git |
