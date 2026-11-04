@@ -1,6 +1,6 @@
 //! 全部动作与默认快捷键。菜单、命令面板和快捷键共用同一套动作。
 
-use gpui::{App, KeyBinding, actions};
+use gpui::{Action, App, KeyBinding, actions};
 
 actions!(
     gitlane,
@@ -40,6 +40,11 @@ actions!(
         ExitMaximizedDiff,
     ]
 );
+
+/// 标签栏“+”下拉里选了某个已添加过的仓库:按路径以新标签打开(已经开着就切过去)。
+#[derive(Clone, PartialEq, Debug, Action)]
+#[action(namespace = gitlane, no_json)]
+pub struct OpenRepoPath(pub String);
 
 /// 仓库视图的键盘上下文;输入框有自己更深的上下文,所以在输入框里 ⌘Z 仍是文本撤销。
 pub const REPO_CONTEXT: &str = "RepoView";

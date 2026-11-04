@@ -42,3 +42,49 @@ async fn actions_work_on_the_welcome_page(cx: &mut TestAppContext) {
         )
     });
 }
+
+#[gpui::test]
+async fn picking_an_added_repo_opens_it_once_as_a_tab(cx: &mut TestAppContext) {
+    let dir = crate::tests::fixture();
+    cx.update(|cx| {
+        gpui::init(cx);
+        crate::actions::bind_keys(cx);
+    });
+    let (window, root) = cx.update(|cx| {
+        let (window, root) = gpui::open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: Point::default(),
+                    size: size(px(1000.), px(700.)),
+                })),
+                ..Default::default()
+            },
+            cx,
+            |window, cx| {
+                let ws = cx.new(|cx| Workspace::new(Settings::default(), true, cx));
+                cx.new(|cx| GitlaneWindow::new(ws, Vec::new(), window, cx))
+            },
+        )
+        .expect("open test window");
+        (window.downcast::<Root>().expect("Root"), root)
+    });
+    let dispatch = |cx: &mut TestAppContext, path: String| {
+        cx.update_window(window.into(), |_, window, cx| {
+            window.dispatch_action(Box::new(crate::actions::OpenRepoPath(path)), cx)
+        })
+        .unwrap();
+        cx.run_until_parked();
+    };
+    let tabs =
+        |cx: &mut TestAppContext| cx.update(|cx| root.read(cx).workspace().read(cx).repos.len());
+
+    // 下拉里选一个已添加的仓库:以新标签打开
+    dispatch(cx, dir.path().to_string_lossy().to_string());
+    assert_eq!(tabs(cx), 1);
+    // 再选同一个:切过去,不重复开
+    dispatch(cx, dir.path().to_string_lossy().to_string());
+    assert_eq!(tabs(cx), 1);
+    // 目录已经不存在:报错提示,不多出标签
+    dispatch(cx, "/definitely/not/a/repo".to_string());
+    assert_eq!(tabs(cx), 1);
+}

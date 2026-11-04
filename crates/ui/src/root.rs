@@ -9,6 +9,7 @@ use crate::updater::UpdateState;
 use app::{ThemePalette, ThemePreference, Workspace};
 use gpui::base::Root;
 use gpui::component::button::{Button, ButtonVariants};
+use gpui::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui::component::{
     ActiveTheme, Icon, IconName, Sizable, Theme, ThemeMode, TitleBar, WindowExt, h_flex, v_flex,
 };
@@ -129,6 +130,15 @@ impl GitlaneWindow {
     pub(crate) fn active_view(&self, cx: &App) -> Option<Entity<RepoView>> {
         let repo = self.workspace.read(cx).active_repo()?;
         self.views.get(&repo.entity_id()).cloned()
+    }
+
+    /// 从“+”下拉里选了一个已添加过的仓库。
+    fn open_repo_path(&mut self, a: &OpenRepoPath, window: &mut Window, cx: &mut Context<Self>) {
+        let path = PathBuf::from(&a.0);
+        let result = self.workspace.update(cx, |ws, cx| ws.open_repo(&path, cx));
+        if let Err(e) = result {
+            window.push_notification(gpui::component::notification::Notification::error(e), cx);
+        }
     }
 
     fn open_repository(&mut self, _: &OpenRepository, window: &mut Window, cx: &mut Context<Self>) {
@@ -374,6 +384,7 @@ impl GitlaneWindow {
 
     fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let update_badge = self.render_update_badge(cx);
+        let add_menu = self.render_add_menu(cx);
         let ws = self.workspace.read(cx);
         let theme = cx.theme().clone();
         let active = ws.active;
@@ -427,14 +438,15 @@ impl GitlaneWindow {
         // 标签栏就是窗口顶栏:红绿灯在左,设置按钮在右,空白处可拖动窗口
         TitleBar::new()
             .children(tabs)
-            .child(
-                Button::new("open-repo")
-                    .xsmall()
-                    .ghost()
-                    .icon(IconName::Plus)
-                    .tooltip("打开仓库(⌘O)")
-                    .on_click(|_, window, cx| window.dispatch_action(Box::new(OpenRepository), cx)),
+            .child(add_menu)
+            .child(div().flex_1())
+            .children(update_badge)
+            .children(
+                ws.git_warning
+                    .clone()
+                    .map(|w| div().px_2().text_xs().text_color(theme.warning).child(w)),
             )
+            // 扫描在最右边、紧挨着设置;设置离窗口右边留出一段距离,不贴着角落
             .child(
                 Button::new("scan-repos")
                     .xsmall()
@@ -443,22 +455,71 @@ impl GitlaneWindow {
                     .tooltip("扫描目录,批量添加仓库(⌘⇧O)")
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(ScanDirectory), cx)),
             )
-            .child(div().flex_1())
-            .children(update_badge)
-            .children(
-                ws.git_warning
-                    .clone()
-                    .map(|w| div().px_2().text_xs().text_color(theme.warning).child(w)),
-            )
             .child(
                 Button::new("open-settings")
                     .xsmall()
                     .ghost()
-                    .mr_1()
+                    .mr_3()
                     .icon(IconName::Settings)
                     .tooltip("设置(⌘,)")
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(OpenSettings), cx)),
             )
+    }
+
+    /// 标签栏的“+”:点开是已添加过的仓库列表,选一个以新标签打开(已经开着就切过去);
+    /// 列表最下面是“添加新的”。一个都没有时只有提示和“添加新的”。
+    fn render_add_menu(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let ws = self.workspace.read(cx);
+        let recent = ws.recent_repos().to_vec();
+        let open: Vec<PathBuf> = ws.repos.iter().map(|r| r.read(cx).path.clone()).collect();
+        Button::new("open-repo")
+            .xsmall()
+            .ghost()
+            .icon(IconName::Plus)
+            .tooltip("打开已添加的仓库,或添加新的")
+            .dropdown_menu(move |menu, _, _| {
+                // 文件系统检查放在菜单打开时做(不是每次渲染),跳过已经不存在的目录
+                let items: Vec<&PathBuf> = recent.iter().filter(|p| p.is_dir()).collect();
+                let mut menu = menu.min_w(px(260.)).max_h(px(360.)).scrollable(true);
+                if items.is_empty() {
+                    menu = menu.item(PopupMenuItem::label("还没有添加过仓库"));
+                }
+                for path in items {
+                    let name = path.file_name().map_or_else(
+                        || path.display().to_string(),
+                        |n| n.to_string_lossy().into(),
+                    );
+                    let parent = path
+                        .parent()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default();
+                    let target = path.to_string_lossy().to_string();
+                    menu = menu.item(
+                        PopupMenuItem::element(move |_, cx| {
+                            let muted = cx.theme().muted_foreground;
+                            h_flex().gap_2().child(div().child(name.clone())).child(
+                                div()
+                                    .text_xs()
+                                    .text_color(muted)
+                                    .truncate()
+                                    .child(parent.clone()),
+                            )
+                        })
+                        .icon(Icon::from(gpui::assets::IconName::FolderGit2))
+                        .checked(open.contains(path))
+                        .on_click(move |_, window, cx| {
+                            window.dispatch_action(Box::new(OpenRepoPath(target.clone())), cx)
+                        }),
+                    );
+                }
+                menu.separator().item(
+                    PopupMenuItem::new("添加新的…")
+                        .icon(IconName::Plus)
+                        .on_click(|_, window, cx| {
+                            window.dispatch_action(Box::new(OpenRepository), cx)
+                        }),
+                )
+            })
     }
 
     fn render_welcome(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -554,6 +615,7 @@ impl Render for GitlaneWindow {
             .text_color(theme.foreground)
             .font_family(".SystemUIFont")
             .on_action(cx.listener(Self::open_repository))
+            .on_action(cx.listener(Self::open_repo_path))
             .on_action(cx.listener(Self::scan_directory))
             .on_action(cx.listener(Self::close_tab))
             .on_action(cx.listener(Self::next_tab))
