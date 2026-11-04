@@ -48,6 +48,19 @@ pub use parser::{DiffParseError, DiffParseOptions};
 pub use presentation::DiffInlineUnit;
 pub use state::{DiffEvent, DiffState};
 
+/// Gitlane:改动行的配色。不设置时用主题的 success / danger 半透明色。
+#[derive(Clone, Copy, Debug)]
+pub struct DiffPalette {
+    pub added_line: Hsla,
+    pub deleted_line: Hsla,
+    /// 行内改动的字符背景,只用于改动不多的行。
+    pub added_word: Hsla,
+    pub deleted_word: Hsla,
+    /// 行首的 +/− 与改动标记的颜色。
+    pub added_sign: Hsla,
+    pub deleted_sign: Hsla,
+}
+
 use std::{collections::HashMap, rc::Rc, sync::Arc};
 
 use gpui::base::TestSupportExt as _;
@@ -88,7 +101,9 @@ mod actions {
             First,
             Last,
             ExtendUp,
-            ExtendDown
+            ExtendDown,
+            NextChange,
+            PreviousChange
         ]
     );
 }
@@ -109,6 +124,10 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("end", Last, Some(KEY_CONTEXT)),
         KeyBinding::new("shift-up", ExtendUp, Some(KEY_CONTEXT)),
         KeyBinding::new("shift-down", ExtendDown, Some(KEY_CONTEXT)),
+        KeyBinding::new("f7", NextChange, Some(KEY_CONTEXT)),
+        KeyBinding::new("shift-f7", PreviousChange, Some(KEY_CONTEXT)),
+        KeyBinding::new("alt-down", NextChange, Some(KEY_CONTEXT)),
+        KeyBinding::new("alt-up", PreviousChange, Some(KEY_CONTEXT)),
         KeyBinding::new(
             if cx.platform_info().is_mac() {
                 "cmd-c"
@@ -263,6 +282,7 @@ pub struct Diff {
     hunk_separator: DiffHunkSeparator,
     change_indicator: DiffChangeIndicator,
     change_background: bool,
+    palette: Option<DiffPalette>,
     soft_wrap: bool,
     header: HeaderSlots,
     annotations: Rc<Annotations>,
@@ -295,6 +315,7 @@ impl Diff {
             hunk_separator: DiffHunkSeparator::default(),
             change_indicator: DiffChangeIndicator::default(),
             change_background: true,
+            palette: None,
             soft_wrap: false,
             header: HeaderSlots::default(),
             annotations: Rc::default(),
@@ -340,6 +361,11 @@ impl Diff {
     /// Tints changed lines. Default is true. Inline changes stay emphasized.
     pub fn change_background(mut self, value: bool) -> Self {
         self.change_background = value;
+        self
+    }
+    /// Gitlane:自定义改动行配色。
+    pub fn palette(mut self, palette: DiffPalette) -> Self {
+        self.palette = Some(palette);
         self
     }
     /// Wraps long lines at the column width instead of scrolling horizontally.
@@ -628,6 +654,7 @@ fn render_diff(
         hunk_separator: props.hunk_separator,
         change_indicator: props.change_indicator,
         change_background: props.change_background,
+        palette: props.palette,
         soft_wrap,
         header: props.header,
         annotations: props.annotations.clone(),
@@ -649,6 +676,18 @@ fn render_diff(
     let scrollbar = state.list().clone();
     let horizontal = state.horizontal_scroll().clone();
     let has_rows = !rows.is_empty();
+    let ruler: Vec<(f32, f32)> = state
+        .change_spans()
+        .iter()
+        .map(|g| {
+            let total = rows.len() as f32;
+            (g.start as f32 / total, g.len() as f32 / total)
+        })
+        .collect();
+    let ruler_color = props
+        .palette
+        .map_or(cx.theme().warning, |p| p.added_sign)
+        .opacity(0.8);
     let label = match state.files() {
         [file] => t!("Diff.Viewer", name = file.path().as_str()).to_string(),
         files => t!("Diff.ViewerFiles", count = files.len()).to_string(),
@@ -693,6 +732,27 @@ fn render_diff(
         .when(has_rows && !soft_wrap, |this| {
             this.child(
                 ScrollableMask::new(Axis::Horizontal, &horizontal).id("diff-horizontal-wheel"),
+            )
+        })
+        // Gitlane:滚动条旁的改动标记,一眼看出改动在文件里的位置
+        .when(has_rows && !ruler.is_empty(), |this| {
+            this.child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .bottom_0()
+                    .right_0()
+                    .w(px(4.))
+                    .children(ruler.into_iter().map(|(top, height)| {
+                        div()
+                            .absolute()
+                            .right_0()
+                            .w_full()
+                            .top(gpui::relative(top))
+                            .h(gpui::relative(height))
+                            .min_h(px(2.))
+                            .bg(ruler_color)
+                    })),
             )
         })
         .when(has_rows, |this| {
@@ -786,6 +846,16 @@ fn render_diff(
                 return;
             }
             this.keyboard_select(1, true, window, cx)
+        }))
+        .on_action(cx.listener(|this, _: &NextChange, window, cx| {
+            if body_focused(this, window, cx) {
+                this.next_change(cx);
+            }
+        }))
+        .on_action(cx.listener(|this, _: &PreviousChange, window, cx| {
+            if body_focused(this, window, cx) {
+                this.previous_change(cx);
+            }
         }))
         .on_action(cx.listener(|this, _: &SelectAll, window, cx| {
             if body_focused(this, window, cx) {
@@ -881,6 +951,7 @@ struct CodePresentation {
     hunk_separator: DiffHunkSeparator,
     change_indicator: DiffChangeIndicator,
     change_background: bool,
+    palette: Option<DiffPalette>,
     soft_wrap: bool,
     header: HeaderSlots,
     annotations: Rc<Annotations>,
@@ -1605,7 +1676,7 @@ fn line_highlights(
     ix: usize,
     changed: bool,
     selected: bool,
-    status: Hsla,
+    word_bg: Hsla,
     code: &CodePresentation,
     cx: &App,
 ) -> Vec<(std::ops::Range<usize>, HighlightStyle)> {
@@ -1622,7 +1693,7 @@ fn line_highlights(
             (
                 range,
                 HighlightStyle {
-                    background_color: Some(status.opacity(0.3)),
+                    background_color: Some(word_bg),
                     ..Default::default()
                 },
             )
@@ -1723,6 +1794,14 @@ fn code_line(
     } else {
         cx.theme().success
     };
+    // Gitlane:自定义配色只作用于普通改动行,冲突块仍按冲突色
+    let (status, line_bg, word_bg) = match (&code.palette, conflict_part.is_some()) {
+        (Some(p), false) => match side {
+            DiffSide::Original => (p.deleted_sign, p.deleted_line, p.deleted_word),
+            DiffSide::Modified => (p.added_sign, p.added_line, p.added_word),
+        },
+        _ => (status, status.opacity(0.12), status.opacity(0.3)),
+    };
     let selected = code.is_selected(file, side, ix)
         || (code.mode == DiffMode::Unified
             && !changed
@@ -1730,7 +1809,7 @@ fn code_line(
                 .iter()
                 .flatten()
                 .any(|(side, ix)| ix.is_some_and(|ix| code.is_selected(file, *side, ix))));
-    let highlights = line_highlights(file, side, ix, changed, selected, status, &code, cx);
+    let highlights = line_highlights(file, side, ix, changed, selected, word_bg, &code, cx);
     // An unchanged Unified row shows one source line for both sides; follow
     // the side a text selection started on so its offsets stay consistent.
     let (text_side, text_ix) = if code.mode == DiffMode::Unified
@@ -1863,9 +1942,7 @@ fn code_line(
         .font_family(cx.theme().mono_font_family.clone())
         .text_size(code.font_size)
         .line_height(code.row_height)
-        .when(changed && code.change_background, |this| {
-            this.bg(status.opacity(0.12))
-        })
+        .when(changed && code.change_background, |this| this.bg(line_bg))
         // An overlay, so the change background shows through a translucent fill.
         .when_some(decoration, |this, background| {
             this.child(div().absolute().inset_0().bg(background))

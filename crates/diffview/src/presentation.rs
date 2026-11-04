@@ -23,7 +23,10 @@ pub enum DiffInlineUnit {
 
 /// Paired lines sharing less than this proportion of content are emphasized as
 /// whole lines only; marking nearly every character adds noise, not signal.
-const MIN_INLINE_SIMILARITY: f32 = 0.25;
+const MIN_INLINE_SIMILARITY: f32 = 0.6;
+
+/// Gitlane:一行里改动片段超过这个数时不做行内强调,碎片太多就只是噪声。
+const MAX_INLINE_RUNS: usize = 4;
 
 /// Settings that determine prepared presentation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -277,6 +280,9 @@ pub(crate) fn changed_runs(
             }
         }
     }
+    if old_runs.len() > MAX_INLINE_RUNS || new_runs.len() > MAX_INLINE_RUNS {
+        return (Vec::new(), Vec::new());
+    }
     (old_runs, new_runs)
 }
 
@@ -319,4 +325,33 @@ pub(crate) fn detected_language(path: &str) -> SharedString {
         },
     };
     SharedString::from(language.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DiffInlineUnit, changed_runs};
+
+    #[test]
+    fn lightly_changed_line_marks_only_the_changed_characters() {
+        let (old, new) = changed_runs(
+            "let width = 10;",
+            "let width = 20;",
+            DiffInlineUnit::Character,
+        );
+        assert_eq!(old, vec![12..13]);
+        assert_eq!(new, vec![12..13]);
+    }
+
+    #[test]
+    fn heavily_rewritten_or_fragmented_lines_get_no_emphasis() {
+        let rewritten = changed_runs("abcdefgh", "uvwxyz12", DiffInlineUnit::Character);
+        assert!(rewritten.0.is_empty() && rewritten.1.is_empty());
+        // 中文两句只有零星相同的字:碎片多,不强调
+        let fragments = changed_runs(
+            "这里读取配置文件并校验内容是否合法",
+            "此处加载设置档案然后检查数据有效性",
+            DiffInlineUnit::Character,
+        );
+        assert!(fragments.0.is_empty() && fragments.1.is_empty());
+    }
 }

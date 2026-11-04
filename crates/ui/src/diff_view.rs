@@ -162,6 +162,7 @@ impl RepoView {
         let diff = Diff::new(&self.diff_state)
             .header_visible(false)
             .change_indicator(DiffChangeIndicator::Signs)
+            .palette(crate::colors::diff_palette(cx.theme().is_dark()))
             // 全文显示时只有一个 hunk、不出分隔行;退回带少量上下文的 diff 时显示“隐藏了 N 行”
             .hunk_separator(DiffHunkSeparator::LineInfo)
             // 不换行:diffview 按编辑器的方式让各栏跟可视区等宽、栏内横向滚动(见 decisions/0008)

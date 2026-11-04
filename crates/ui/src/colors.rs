@@ -97,3 +97,28 @@ pub fn avatar_color(name: &str, dark: bool) -> Hsla {
         .fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
     lane_color((h % 8) as u16, dark)
 }
+
+/// diff 改动行的配色:亮色是浅粉 / 浅绿整行底色,只在改动不多的行里用更深的同色标出改动字符;
+/// 暗色是同一色相的半透明版本。
+pub fn diff_palette(dark: bool) -> diffview::DiffPalette {
+    let a = |rgb: u32, alpha: f32| hex(rgb).opacity(alpha);
+    if dark {
+        diffview::DiffPalette {
+            added_line: a(0x2ea043, 0.15),
+            deleted_line: a(0xf85149, 0.15),
+            added_word: a(0x2ea043, 0.40),
+            deleted_word: a(0xf85149, 0.40),
+            added_sign: hex(0x56d364),
+            deleted_sign: hex(0xf47067),
+        }
+    } else {
+        diffview::DiffPalette {
+            added_line: hex(0xe8f6ef),
+            deleted_line: hex(0xfbe8e6),
+            added_word: hex(0xc0e6d4),
+            deleted_word: hex(0xf4c1b8),
+            added_sign: hex(0x1a7f37),
+            deleted_sign: hex(0xcf222e),
+        }
+    }
+}

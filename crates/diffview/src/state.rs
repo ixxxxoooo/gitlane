@@ -220,6 +220,8 @@ pub struct DiffState {
     header_rows: Vec<usize>,
     rows: Rc<Vec<DisplayRow>>,
     change_rows: Vec<usize>,
+    /// Gitlane:各改动块占的显示行范围,供滚动条旁的改动标记使用。
+    change_spans: Vec<Range<usize>>,
     list: ListState,
     horizontal_scroll: ScrollHandle,
     focus: FocusHandle,
@@ -351,6 +353,7 @@ impl DiffState {
             header_rows: Vec::new(),
             rows: Rc::default(),
             change_rows: Vec::new(),
+            change_spans: Vec::new(),
             list: ListState::new(0, ListAlignment::Top, px(0.)),
             horizontal_scroll: ScrollHandle::new(),
             focus,
@@ -846,6 +849,9 @@ impl DiffState {
 
     /// Moves to the next changed group after the current viewport, across files,
     /// wrapping to the first once the list is scrolled to its end.
+    pub(crate) fn change_spans(&self) -> &[Range<usize>] {
+        &self.change_spans
+    }
     pub fn next_change(&mut self, cx: &mut Context<Self>) {
         self.move_change(true, cx);
     }
@@ -1318,7 +1324,8 @@ impl DiffState {
     fn rebuild(&mut self, reset: bool) {
         let rows = self.project_rows();
         self.file_rows = source_rows(&self.files, &rows);
-        self.change_rows = changed_groups(&rows);
+        self.change_spans = changed_groups(&rows);
+        self.change_rows = self.change_spans.iter().map(|g| g.start).collect();
         self.header_rows = rows
             .iter()
             .enumerate()
@@ -1548,16 +1555,20 @@ fn source_rows(files: &[DiffFile], rows: &[DisplayRow]) -> Vec<FileRows> {
     file_rows
 }
 
-fn changed_groups(rows: &[DisplayRow]) -> Vec<usize> {
+fn changed_groups(rows: &[DisplayRow]) -> Vec<Range<usize>> {
     let changed = |row: &DisplayRow| matches!(row, DisplayRow::Code { changed: true, .. });
-    rows.iter()
-        .enumerate()
-        .filter_map(|(ix, row)| {
-            (changed(row)
-                && (ix == 0 || !changed(&rows[ix - 1]) || rows[ix - 1].file() != row.file()))
-            .then_some(ix)
-        })
-        .collect()
+    let mut groups: Vec<Range<usize>> = Vec::new();
+    for (ix, row) in rows.iter().enumerate() {
+        if !changed(row) {
+            continue;
+        }
+        let continues = ix > 0 && changed(&rows[ix - 1]) && rows[ix - 1].file() == row.file();
+        match groups.last_mut() {
+            Some(last) if continues => last.end = ix + 1,
+            _ => groups.push(ix..ix + 1),
+        }
+    }
+    groups
 }
 
 const SIDE_BIT: u64 = 1 << 40;
@@ -1811,5 +1822,26 @@ fn project_conflicts(
             file,
             pairs: start..ix,
         });
+    }
+}
+
+#[cfg(test)]
+mod change_group_tests {
+    use super::{DisplayRow, changed_groups};
+
+    fn code(changed: bool) -> DisplayRow {
+        DisplayRow::Code {
+            file: 0,
+            original: Some(0),
+            modified: Some(0),
+            changed,
+        }
+    }
+
+    #[test]
+    fn consecutive_changed_rows_form_one_span() {
+        let rows = [code(false), code(true), code(true), code(false), code(true)];
+        assert_eq!(changed_groups(&rows), vec![1..3, 4..5]);
+        assert!(changed_groups(&[code(false)]).is_empty());
     }
 }
