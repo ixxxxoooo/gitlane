@@ -568,10 +568,7 @@ impl RepoView {
         let unstaged_panel = self.side_section(
             "unstaged",
             true,
-            (
-                Icon::new(IconName::File),
-                format!("未暂存 {}", unstaged.len()),
-            ),
+            (None, format!("未暂存 {}", unstaged.len())),
             stage_all,
             scroll("staging-unstaged", unstaged_body),
             cx,
@@ -579,10 +576,7 @@ impl RepoView {
         let staged_panel = self.side_section(
             "staged",
             true,
-            (
-                Icon::new(IconName::File),
-                format!("已暂存 {}", staged.len()),
-            ),
+            (None, format!("已暂存 {}", staged.len())),
             unstage_all,
             scroll("staging-staged", staged_body),
             cx,
