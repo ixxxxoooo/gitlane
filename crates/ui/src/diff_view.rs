@@ -78,7 +78,7 @@ impl RepoView {
                 .into_any_element(),
             (None, Some(f)) => {
                 self.sync_diff_state(f.clone(), split, cx);
-                self.render_diff_body(&f, target, cx)
+                self.render_diff_body(&f, target, split, cx)
             }
         };
 
@@ -126,6 +126,7 @@ impl RepoView {
         &self,
         file: &FileDiff,
         target: DiffTarget,
+        split: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let view = cx.entity().downgrade();
@@ -146,7 +147,8 @@ impl RepoView {
         let diff = Diff::new(&self.diff_state)
             .header_visible(false)
             .change_indicator(DiffChangeIndicator::Signs)
-            .soft_wrap(false)
+            // 并排时组件按最长行定每栏宽度,有长行就把新版本那一栏挤出屏幕;换行后左右各占半屏
+            .soft_wrap(split)
             .gutter_markers(markers)
             .render_gutter_marker(move |marker, _, _| {
                 let hunk: usize = marker.label().parse().unwrap_or(0);
