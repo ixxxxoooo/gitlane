@@ -92,6 +92,10 @@ impl GitlaneWindow {
             .retain(|id, _| repos.iter().any(|r| r.entity_id() == *id));
         if let Some(v) = created {
             v.read(cx).focus_handle().clone().focus(window, cx);
+        } else if self.views.is_empty() {
+            // 欢迎页上没有可聚焦的元素;焦点不在窗口根视图里,按钮发出的动作(打开仓库、扫描目录)
+            // 沿焦点链就到不了根视图的 on_action,点了没反应
+            self.focus.focus(window, cx);
         }
     }
 

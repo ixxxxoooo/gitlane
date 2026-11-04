@@ -23,6 +23,8 @@ mod sidebar;
 mod tests;
 #[cfg(test)]
 mod tests_panels;
+#[cfg(test)]
+mod tests_welcome;
 mod updater;
 
 use actions::*;
