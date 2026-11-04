@@ -641,164 +641,184 @@ impl RepoView {
         let sep = || div().w(px(1.)).h(px(18.)).mx_1().bg(theme.border);
         let git_icon = |name: gpui::assets::IconName| Icon::from(name);
         h_flex()
+            .id("toolbar")
+            .test_support()
             .h(px(44.))
             .px_3()
             .gap_1()
             .border_b_1()
             .border_color(theme.border)
+            // 三段式:左边分支名、中间操作按钮、右边搜索;左右各占剩余宽度的一半,中间这组才是真正居中
+            .child(
+                h_flex().flex_1().min_w_0().child(
+                    h_flex()
+                        .id("head")
+                        .px_2()
+                        .gap_1p5()
+                        .max_w(px(260.))
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(
+                            git_icon(gpui::assets::IconName::GitBranch)
+                                .small()
+                                .text_color(theme.muted_foreground),
+                        )
+                        .child(div().truncate().child(head))
+                        .when(ahead > 0 || behind > 0, |d| {
+                            d.child(
+                                h_flex()
+                                    .gap_1()
+                                    .text_xs()
+                                    .font_weight(FontWeight::NORMAL)
+                                    .text_color(theme.muted_foreground)
+                                    .when(ahead > 0, |d| d.child(format!("↑{ahead}")))
+                                    .when(behind > 0, |d| d.child(format!("↓{behind}"))),
+                            )
+                        }),
+                ),
+            )
             .child(
                 h_flex()
-                    .id("head")
-                    .px_2()
-                    .gap_1p5()
-                    .max_w(px(260.))
-                    .text_sm()
-                    .font_weight(FontWeight::SEMIBOLD)
+                    .id("toolbar-actions")
+                    .test_support()
+                    .flex_none()
+                    .gap_1()
+                    .child(sep())
                     .child(
-                        git_icon(gpui::assets::IconName::GitBranch)
+                        Button::new("undo")
                             .small()
-                            .text_color(theme.muted_foreground),
+                            .ghost()
+                            .icon(IconName::Undo2)
+                            .tooltip(
+                                undo_label
+                                    .clone()
+                                    .unwrap_or_else(|| "没有可撤销的操作".into()),
+                            )
+                            .disabled(busy || undo_label.is_none())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.repo.update(cx, |r, cx| r.undo(cx))
+                            })),
                     )
-                    .child(div().truncate().child(head))
-                    .when(ahead > 0 || behind > 0, |d| {
-                        d.child(
-                            h_flex()
-                                .gap_1()
-                                .text_xs()
-                                .font_weight(FontWeight::NORMAL)
-                                .text_color(theme.muted_foreground)
-                                .when(ahead > 0, |d| d.child(format!("↑{ahead}")))
-                                .when(behind > 0, |d| d.child(format!("↓{behind}"))),
-                        )
-                    }),
-            )
-            .child(sep())
-            .child(
-                Button::new("undo")
-                    .small()
-                    .ghost()
-                    .icon(IconName::Undo2)
-                    .tooltip(
-                        undo_label
-                            .clone()
-                            .unwrap_or_else(|| "没有可撤销的操作".into()),
+                    .child(
+                        Button::new("redo")
+                            .small()
+                            .ghost()
+                            .icon(IconName::Redo2)
+                            .tooltip(
+                                redo_label
+                                    .clone()
+                                    .unwrap_or_else(|| "没有可重做的操作".into()),
+                            )
+                            .disabled(busy || redo_label.is_none())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.repo.update(cx, |r, cx| r.redo(cx))
+                            })),
                     )
-                    .disabled(busy || undo_label.is_none())
-                    .on_click(
-                        cx.listener(|this, _, _, cx| this.repo.update(cx, |r, cx| r.undo(cx))),
-                    ),
-            )
-            .child(
-                Button::new("redo")
-                    .small()
-                    .ghost()
-                    .icon(IconName::Redo2)
-                    .tooltip(
-                        redo_label
-                            .clone()
-                            .unwrap_or_else(|| "没有可重做的操作".into()),
+                    .child(sep())
+                    .child(
+                        Button::new("fetch")
+                            .small()
+                            .ghost()
+                            .icon(IconName::RefreshCw)
+                            .label("Fetch")
+                            .loading(spin(app::BusyAction::Fetch))
+                            .disabled(busy && !spin(app::BusyAction::Fetch))
+                            .on_click(cx.listener(|this, _, _, cx| this.run(Command::Fetch, cx))),
                     )
-                    .disabled(busy || redo_label.is_none())
-                    .on_click(
-                        cx.listener(|this, _, _, cx| this.repo.update(cx, |r, cx| r.redo(cx))),
-                    ),
-            )
-            .child(sep())
-            .child(
-                Button::new("fetch")
-                    .small()
-                    .ghost()
-                    .icon(IconName::RefreshCw)
-                    .label("Fetch")
-                    .loading(spin(app::BusyAction::Fetch))
-                    .disabled(busy && !spin(app::BusyAction::Fetch))
-                    .on_click(cx.listener(|this, _, _, cx| this.run(Command::Fetch, cx))),
-            )
-            .child(
-                Button::new("pull")
-                    .small()
-                    .ghost()
-                    .icon(git_icon(gpui::assets::IconName::ArrowDownToLine))
-                    .label(if behind > 0 {
-                        format!("Pull ↓{behind}")
-                    } else {
-                        "Pull".to_string()
-                    })
-                    .when(behind > 0, |b| {
-                        b.tooltip(format!("上游有 {behind} 个本地没有的提交,点击拉取"))
-                    })
-                    .loading(spin(app::BusyAction::Pull))
-                    .disabled(busy && !spin(app::BusyAction::Pull))
-                    .on_click(cx.listener(|this, _, _, cx| this.run(Command::Pull, cx))),
-            )
-            .child(
-                Button::new("push")
-                    .small()
-                    .ghost()
-                    .icon(git_icon(gpui::assets::IconName::ArrowUpFromLine))
-                    .label(if ahead > 0 {
-                        format!("Push ↑{ahead}")
-                    } else {
-                        "Push".to_string()
-                    })
-                    .when(ahead > 0, |b| {
-                        b.tooltip(format!("本地有 {ahead} 个提交还没推送,点击推送"))
-                    })
-                    .loading(spin(app::BusyAction::Push))
-                    .disabled(busy && !spin(app::BusyAction::Push))
-                    .on_click(
-                        cx.listener(|this, _, _, cx| this.run(Command::Push { force: false }, cx)),
-                    ),
-            )
-            .child(sep())
-            .child(
-                Button::new("branch")
-                    .small()
-                    .ghost()
-                    .icon(git_icon(gpui::assets::IconName::GitBranch))
-                    .label("Branch")
-                    .tooltip("新建分支(⌘⇧B)")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.on_new_branch(&NewBranch, window, cx)
+                    .child(
+                        Button::new("pull")
+                            .small()
+                            .ghost()
+                            .icon(git_icon(gpui::assets::IconName::ArrowDownToLine))
+                            .label(if behind > 0 {
+                                format!("Pull ↓{behind}")
+                            } else {
+                                "Pull".to_string()
+                            })
+                            .when(behind > 0, |b| {
+                                b.tooltip(format!("上游有 {behind} 个本地没有的提交,点击拉取"))
+                            })
+                            .loading(spin(app::BusyAction::Pull))
+                            .disabled(busy && !spin(app::BusyAction::Pull))
+                            .on_click(cx.listener(|this, _, _, cx| this.run(Command::Pull, cx))),
+                    )
+                    .child(
+                        Button::new("push")
+                            .small()
+                            .ghost()
+                            .icon(git_icon(gpui::assets::IconName::ArrowUpFromLine))
+                            .label(if ahead > 0 {
+                                format!("Push ↑{ahead}")
+                            } else {
+                                "Push".to_string()
+                            })
+                            .when(ahead > 0, |b| {
+                                b.tooltip(format!("本地有 {ahead} 个提交还没推送,点击推送"))
+                            })
+                            .loading(spin(app::BusyAction::Push))
+                            .disabled(busy && !spin(app::BusyAction::Push))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.run(Command::Push { force: false }, cx)
+                            })),
+                    )
+                    .child(sep())
+                    .child(
+                        Button::new("branch")
+                            .small()
+                            .ghost()
+                            .icon(git_icon(gpui::assets::IconName::GitBranch))
+                            .label("Branch")
+                            .tooltip("新建分支(⌘⇧B)")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.on_new_branch(&NewBranch, window, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new("stash")
+                            .small()
+                            .ghost()
+                            .icon(git_icon(gpui::assets::IconName::Archive))
+                            .label("Stash")
+                            .loading(spin(app::BusyAction::Stash))
+                            .disabled(busy && !spin(app::BusyAction::Stash))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.run(Command::StashPush { message: None }, cx)
+                            })),
+                    )
+                    // 联网操作(fetch / pull / push)进行中才出现,点一下取消
+                    .children(cancellable.then(|| {
+                        Button::new("cancel")
+                            .small()
+                            .ghost()
+                            .icon(IconName::Close)
+                            .label("取消")
+                            .tooltip("取消正在进行的联网操作")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.repo.update(cx, |r, cx| r.cancel_running(cx))
+                            }))
                     })),
             )
             .child(
-                Button::new("stash")
-                    .small()
-                    .ghost()
-                    .icon(git_icon(gpui::assets::IconName::Archive))
-                    .label("Stash")
-                    .loading(spin(app::BusyAction::Stash))
-                    .disabled(busy && !spin(app::BusyAction::Stash))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.run(Command::StashPush { message: None }, cx)
-                    })),
-            )
-            // 联网操作(fetch / pull / push)进行中才出现,点一下取消
-            .children(cancellable.then(|| {
-                Button::new("cancel")
-                    .small()
-                    .ghost()
-                    .icon(IconName::Close)
-                    .label("取消")
-                    .tooltip("取消正在进行的联网操作")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.repo.update(cx, |r, cx| r.cancel_running(cx))
-                    }))
-            }))
-            .child(div().flex_1())
-            .child(
-                div()
-                    .w(px(260.))
-                    .child(Input::new(&self.search).small().cleanable(true)),
-            )
-            .child(
-                Button::new("palette")
-                    .small()
-                    .ghost()
-                    .label("⌘K")
-                    .tooltip("命令面板")
-                    .on_click(|_, window, cx| window.dispatch_action(Box::new(CommandPalette), cx)),
+                h_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .justify_end()
+                    .gap_1()
+                    .child(
+                        div()
+                            .w(px(260.))
+                            .child(Input::new(&self.search).small().cleanable(true)),
+                    )
+                    .child(
+                        Button::new("palette")
+                            .small()
+                            .ghost()
+                            .label("⌘K")
+                            .tooltip("命令面板")
+                            .on_click(|_, window, cx| {
+                                window.dispatch_action(Box::new(CommandPalette), cx)
+                            }),
+                    ),
             )
     }
 

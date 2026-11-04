@@ -267,3 +267,30 @@ async fn diff_height_follows_ratio_and_can_be_maximized(cx: &mut TestAppContext)
     esc(cx);
     assert!(has_graph(cx), "没撑满时 Esc 不改变界面");
 }
+
+#[gpui::test]
+async fn toolbar_actions_are_centered(cx: &mut TestAppContext) {
+    let dir = fixture();
+    let (handle, root) = open(cx, dir.path());
+    let r = repo(&root, cx);
+    cx.wait_for(handle.into(), TIMEOUT, move |_, cx| {
+        r.read(cx).data.is_some()
+    })
+    .await;
+    let (bar, actions) = cx
+        .update_window(handle.into(), |_, window, cx| {
+            window.render_frame(cx);
+            (
+                window.find("toolbar").bounds(),
+                window.find("toolbar-actions").bounds(),
+            )
+        })
+        .unwrap();
+    // 操作按钮组的中心与工具栏的中心对齐(左右两段各占一半剩余宽度)
+    let bar_mid = f32::from(bar.origin.x) + f32::from(bar.size.width) / 2.;
+    let actions_mid = f32::from(actions.origin.x) + f32::from(actions.size.width) / 2.;
+    assert!(
+        (bar_mid - actions_mid).abs() < 2.,
+        "居中:工具栏 {bar_mid} vs 按钮组 {actions_mid}"
+    );
+}
