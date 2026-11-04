@@ -1,12 +1,13 @@
 //! Diff 视图:统一 / 并排两种布局、字符级差异、minimap,工作区 diff 支持 hunk 与单行暂存。
 
-use crate::colors::diff_colors;
+use crate::colors::{diff_colors, syntax_color};
 use crate::repo_view::RepoView;
 use app::Command;
 use gitcore::diff::{DiffTarget, FileDiff, LineKind, inline_changes, pair_changed_lines};
+use gitcore::highlight::DiffSyntax;
 use gitcore::patch::PatchDirection;
 use gpui::component::button::{Button, ButtonVariants};
-use gpui::component::{ActiveTheme, Sizable, h_flex, v_flex};
+use gpui::component::{ActiveTheme, Icon, IconName, Sizable, h_flex, v_flex};
 use gpui::prelude::*;
 use gpui::*;
 use std::collections::{BTreeSet, HashMap};
@@ -15,6 +16,9 @@ use std::sync::Arc;
 
 const LINE_HEIGHT: f32 = 20.;
 const MINIMAP_WIDTH: f32 = 10.;
+const CODE_FONT: &str = "Menlo";
+const CODE_SIZE: f32 = 12.;
+const LINE_NO_WIDTH: f32 = 40.;
 
 #[derive(Clone, Copy, Debug)]
 pub enum DiffRow {
@@ -30,12 +34,13 @@ pub struct DiffCache {
     pub key: usize,
     pub split: bool,
     pub file: Arc<FileDiff>,
+    pub syntax: Option<Arc<DiffSyntax>>,
     pub rows: Vec<DiffRow>,
     pub inline: HashMap<(usize, usize), Vec<Range<usize>>>,
 }
 
 impl DiffCache {
-    fn build(file: Arc<FileDiff>, split: bool) -> Self {
+    fn build(file: Arc<FileDiff>, syntax: Option<Arc<DiffSyntax>>, split: bool) -> Self {
         let mut rows = Vec::new();
         let mut inline = HashMap::new();
         for (h, hunk) in file.hunks.iter().enumerate() {
@@ -49,6 +54,7 @@ impl DiffCache {
                     inline.insert((h, a), n);
                 }
             }
+            emphasize_rewritten(h, hunk, &mut inline);
             if !split {
                 rows.extend((0..hunk.lines.len()).map(|i| DiffRow::Line(h, i)));
                 continue;
@@ -87,16 +93,113 @@ impl DiffCache {
             key: Arc::as_ptr(&file) as usize,
             split,
             file,
+            syntax,
             rows,
             inline,
         }
     }
 }
 
+/// 同一改动块里既有删除又有新增时,没能做字符级配对的行整行用深色标出(与 VS Code 一致),
+/// 一眼能分清“改了几个字”和“整行重写”。纯新增 / 纯删除的块只有浅色行底,新文件不会一片深绿。
+fn emphasize_rewritten(
+    h: usize,
+    hunk: &gitcore::diff::Hunk,
+    inline: &mut HashMap<(usize, usize), Vec<Range<usize>>>,
+) {
+    let lines = &hunk.lines;
+    let mut i = 0;
+    while i < lines.len() {
+        if lines[i].kind == LineKind::Context {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        let (mut dels, mut adds) = (0, 0);
+        while i < lines.len() && lines[i].kind != LineKind::Context {
+            match lines[i].kind {
+                LineKind::Deleted => dels += 1,
+                _ => adds += 1,
+            }
+            i += 1;
+        }
+        if dels == 0 || adds == 0 {
+            continue;
+        }
+        for (l, line) in lines.iter().enumerate().take(i).skip(start) {
+            let len = line.text.len();
+            if len > 0 {
+                inline
+                    .entry((h, l))
+                    .or_insert_with(|| std::iter::once(0..len).collect());
+            }
+        }
+    }
+}
+
+/// 把语法颜色(前景)与字符级差异(背景)合成互不重叠、按位置排好的高亮区间。
+fn merge_highlights(
+    text: &str,
+    syntax: &[(Range<usize>, Hsla)],
+    words: &[Range<usize>],
+    word_bg: Hsla,
+) -> Vec<(Range<usize>, HighlightStyle)> {
+    let ok = |r: &Range<usize>| {
+        r.start < r.end
+            && r.end <= text.len()
+            && text.is_char_boundary(r.start)
+            && text.is_char_boundary(r.end)
+    };
+    let mut cuts: Vec<usize> = syntax
+        .iter()
+        .map(|(r, _)| r)
+        .chain(words)
+        .filter(|r| ok(r))
+        .flat_map(|r| [r.start, r.end])
+        .collect();
+    cuts.sort_unstable();
+    cuts.dedup();
+    let (mut si, mut wi) = (0, 0);
+    let mut out: Vec<(Range<usize>, HighlightStyle)> = Vec::new();
+    for w in cuts.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        while si < syntax.len() && syntax[si].0.end <= a {
+            si += 1;
+        }
+        while wi < words.len() && words[wi].end <= a {
+            wi += 1;
+        }
+        let color = syntax
+            .get(si)
+            .filter(|(r, _)| r.start <= a && ok(r))
+            .map(|(_, c)| *c);
+        let background_color = words
+            .get(wi)
+            .filter(|r| r.start <= a && ok(r))
+            .map(|_| word_bg);
+        if color.is_none() && background_color.is_none() {
+            continue;
+        }
+        let style = HighlightStyle {
+            color,
+            background_color,
+            ..Default::default()
+        };
+        match out.last_mut() {
+            Some((r, s)) if r.end == a && *s == style => r.end = b,
+            _ => out.push((a..b, style)),
+        }
+    }
+    out
+}
+
 /// 制表符展开为 4 个空格,同时平移高亮区间。
-fn expand_tabs(text: &str, ranges: &[Range<usize>]) -> (String, Vec<Range<usize>>) {
+fn expand_tabs(
+    text: &str,
+    highlights: Vec<(Range<usize>, HighlightStyle)>,
+) -> (String, Vec<(Range<usize>, HighlightStyle)>) {
     if !text.contains('\t') {
-        return (text.to_string(), ranges.to_vec());
+        return (text.to_string(), highlights);
     }
     let mut out = String::with_capacity(text.len() + 16);
     let mut map = Vec::with_capacity(text.len() + 1);
@@ -114,8 +217,11 @@ fn expand_tabs(text: &str, ranges: &[Range<usize>]) -> (String, Vec<Range<usize>
     while map.len() <= text.len() {
         map.push(out.len());
     }
-    let ranges = ranges.iter().map(|r| map[r.start]..map[r.end]).collect();
-    (out, ranges)
+    let highlights = highlights
+        .into_iter()
+        .map(|(r, s)| (map[r.start]..map[r.end], s))
+        .collect();
+    (out, highlights)
 }
 
 impl RepoView {
@@ -137,6 +243,7 @@ impl RepoView {
         let path = state.path.clone();
         let error = state.error.clone();
         let file = state.file.clone();
+        let syntax = state.syntax.clone();
 
         let header = self.render_diff_header(&path, target, file.as_deref(), split, cx);
         let body: AnyElement = match (error, file) {
@@ -181,7 +288,10 @@ impl RepoView {
                     .as_ref()
                     .is_none_or(|c| c.key != key || c.split != split)
                 {
-                    self.diff_cache = Some(DiffCache::build(f, split));
+                    self.diff_cache = Some(DiffCache::build(f, syntax, split));
+                } else if let Some(c) = &mut self.diff_cache {
+                    // 首次打开时高亮晚于 diff 到达,只换高亮,不重建行布局
+                    c.syntax = syntax;
                 }
                 let rows = self.diff_cache.as_ref().map_or(0, |c| c.rows.len());
                 let list = uniform_list(
@@ -221,25 +331,47 @@ impl RepoView {
     ) -> impl IntoElement + use<> {
         let theme = cx.theme().clone();
         let n_selected = self.selected_lines.len();
+        let (dir, name) = match path.rsplit_once('/') {
+            Some((d, n)) => (Some(d.to_string()), n.to_string()),
+            None => (None, path.to_string()),
+        };
         let mut bar = h_flex()
-            .h(px(32.))
-            .px_2()
+            .h(px(34.))
+            .px_3()
             .gap_2()
             .border_b_1()
             .border_color(theme.border)
             .bg(theme.secondary)
             .child(
-                div()
+                Icon::new(IconName::File)
+                    .xsmall()
+                    .text_color(theme.muted_foreground),
+            )
+            .child(
+                h_flex()
                     .flex_1()
-                    .truncate()
-                    .font_family("Menlo")
+                    .min_w_0()
+                    .gap_2()
                     .text_sm()
-                    .child(path.to_string()),
+                    .child(
+                        div()
+                            .flex_none()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(name),
+                    )
+                    .children(dir.map(|d| {
+                        div()
+                            .truncate()
+                            .text_xs()
+                            .text_color(theme.muted_foreground)
+                            .child(d)
+                    })),
             )
             .children(file.map(|f| {
                 h_flex()
-                    .gap_1()
+                    .gap_1p5()
                     .text_xs()
+                    .font_family(CODE_FONT)
                     .child(
                         div()
                             .text_color(theme.green)
@@ -396,68 +528,79 @@ impl RepoView {
             return Vec::new();
         };
         let theme = cx.theme().clone();
-        let colors = diff_colors(theme.is_dark());
-        let text_style = window.text_style();
+        let dark = theme.is_dark();
+        let colors = diff_colors(dark);
+        // 文字样式要显式给出等宽字体:StyledText 的字体来自这里,而不是外层 div 的 font_family
+        let mut text_style = window.text_style();
+        text_style.font_family = CODE_FONT.into();
+        text_style.font_size = px(CODE_SIZE).into();
+        text_style.color = theme.foreground;
         let selectable = !matches!(target, DiffTarget::Commit(_));
         let file = cache.file.clone();
+        let syntax = cache.syntax.clone();
         let rows: Vec<DiffRow> = cache.rows[range.clone()].to_vec();
 
         let line_cell =
             |h: usize, l: usize, show_old: bool, show_new: bool, selected: bool| -> Div {
                 let line = &file.hunks[h].lines[l];
-                let (bg, word_bg) = match line.kind {
-                    LineKind::Added => (colors.added_bg, colors.added_word),
-                    LineKind::Deleted => (colors.deleted_bg, colors.deleted_word),
-                    LineKind::Context => (gpui::transparent_black(), gpui::transparent_black()),
+                let none = gpui::transparent_black();
+                let (bg, word_bg, gutter_bg, sign) = match line.kind {
+                    LineKind::Added => (
+                        colors.added_bg,
+                        colors.added_word,
+                        colors.added_gutter,
+                        colors.added_sign,
+                    ),
+                    LineKind::Deleted => (
+                        colors.deleted_bg,
+                        colors.deleted_word,
+                        colors.deleted_gutter,
+                        colors.deleted_sign,
+                    ),
+                    LineKind::Context => (none, none, none, theme.muted_foreground),
                 };
-                let empty = Vec::new();
-                let ranges = cache.inline.get(&(h, l)).unwrap_or(&empty);
-                let (text, ranges) = expand_tabs(&line.text, ranges);
-                let highlights: Vec<(Range<usize>, HighlightStyle)> = ranges
-                    .into_iter()
-                    .map(|r| {
-                        (
-                            r,
-                            HighlightStyle {
-                                background_color: Some(word_bg),
-                                ..Default::default()
-                            },
-                        )
+                let spans: Vec<(Range<usize>, Hsla)> = syntax
+                    .as_ref()
+                    .map(|s| {
+                        s.line(h, l)
+                            .iter()
+                            .filter_map(|(r, n)| syntax_color(n, dark).map(|c| (r.clone(), c)))
+                            .collect()
                     })
-                    .collect();
-                let no = |n: Option<u32>| n.map(|n| n.to_string()).unwrap_or_default();
+                    .unwrap_or_default();
+                let words = cache.inline.get(&(h, l)).map_or(&[][..], Vec::as_slice);
+                let (text, highlights) = expand_tabs(
+                    &line.text,
+                    merge_highlights(&line.text, &spans, words, word_bg),
+                );
+                let number = |n: Option<u32>| {
+                    div()
+                        .w(px(LINE_NO_WIDTH))
+                        .flex_none()
+                        .pr_2()
+                        .text_right()
+                        .text_color(theme.muted_foreground.opacity(0.75))
+                        .child(n.map(|n| n.to_string()).unwrap_or_default())
+                };
                 h_flex()
                     .flex_1()
                     .min_w_0()
                     .h_full()
                     .bg(if selected { colors.selected_bg } else { bg })
-                    .when(show_old, |d| {
-                        d.child(
-                            div()
-                                .w(px(44.))
-                                .flex_none()
-                                .pr_1()
-                                .text_right()
-                                .text_color(theme.muted_foreground)
-                                .child(no(line.old_no)),
-                        )
-                    })
-                    .when(show_new, |d| {
-                        d.child(
-                            div()
-                                .w(px(44.))
-                                .flex_none()
-                                .pr_1()
-                                .text_right()
-                                .text_color(theme.muted_foreground)
-                                .child(no(line.new_no)),
-                        )
-                    })
+                    .child(
+                        h_flex()
+                            .flex_none()
+                            .h_full()
+                            .when(!selected, |d| d.bg(gutter_bg))
+                            .when(show_old, |d| d.child(number(line.old_no)))
+                            .when(show_new, |d| d.child(number(line.new_no))),
+                    )
                     .child(
                         div()
-                            .w(px(14.))
+                            .w(px(18.))
                             .flex_none()
-                            .text_color(theme.muted_foreground)
+                            .text_center()
+                            .text_color(sign)
                             .child(line.kind.prefix().to_string()),
                     )
                     .child(
@@ -481,16 +624,16 @@ impl RepoView {
                     .id(("diff-row", ix))
                     .h(px(LINE_HEIGHT))
                     .w_full()
-                    .font_family("Menlo")
-                    .text_xs();
+                    .font_family(CODE_FONT)
+                    .text_size(px(CODE_SIZE));
                 match row {
                     DiffRow::Header(h) => {
                         let hunk = &file.hunks[h];
                         let mut el = base
                             .bg(colors.hunk_bg)
-                            .px_2()
+                            .px_3()
                             .gap_2()
-                            .text_color(theme.muted_foreground)
+                            .text_color(colors.hunk_fg)
                             .child(div().flex_1().truncate().child(hunk.header.clone()));
                         match target {
                             DiffTarget::Unstaged => {
@@ -675,12 +818,77 @@ impl RepoView {
 
 #[cfg(test)]
 mod tests {
-    use super::expand_tabs;
+    use super::{emphasize_rewritten, expand_tabs, merge_highlights};
+    use gitcore::diff::{DiffLine, Hunk, LineKind};
+    use gpui::{HighlightStyle, Hsla, hsla};
+    use std::collections::HashMap;
 
     #[test]
     fn tabs_shift_ranges() {
-        let (s, r) = expand_tabs("\tab", std::slice::from_ref(&(1..2)));
+        let style = HighlightStyle::default();
+        let (s, r) = expand_tabs("\tab", vec![(1..2, style)]);
         assert_eq!(s, "    ab");
-        assert_eq!(&s[r[0].clone()], "a");
+        assert_eq!(&s[r[0].0.clone()], "a");
+    }
+
+    #[test]
+    fn merges_syntax_and_word_ranges_without_overlap() {
+        let red: Hsla = hsla(0., 1., 0.5, 1.);
+        let bg: Hsla = hsla(0.3, 1., 0.5, 1.);
+        // 语法:0..5 红色;字符级差异:3..8
+        let out = merge_highlights(
+            "let x = 1;",
+            &[(0..5, red)],
+            std::slice::from_ref(&(3..8)),
+            bg,
+        );
+        let got: Vec<_> = out
+            .iter()
+            .map(|(r, s)| (r.clone(), s.color.is_some(), s.background_color.is_some()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![(0..3, true, false), (3..5, true, true), (5..8, false, true)]
+        );
+        // 越界、不在字符边界上的区间被忽略
+        assert!(merge_highlights("中", &[(0..1, red), (0..9, red)], &[], bg).is_empty());
+    }
+
+    fn line(kind: LineKind, text: &str) -> DiffLine {
+        DiffLine {
+            kind,
+            old_no: None,
+            new_no: None,
+            text: text.into(),
+            no_newline: false,
+        }
+    }
+
+    #[test]
+    fn rewritten_lines_are_emphasized_only_in_mixed_blocks() {
+        use LineKind::*;
+        let hunk = Hunk {
+            header: String::new(),
+            old_start: 1,
+            old_lines: 0,
+            new_start: 1,
+            new_lines: 0,
+            lines: vec![
+                line(Deleted, "a"),
+                line(Added, "b"),
+                line(Added, "c"),
+                line(Context, "x"),
+                line(Added, "only added"),
+            ],
+        };
+        let mut inline = HashMap::new();
+        let whole = || -> Vec<std::ops::Range<usize>> { std::iter::once(0..1).collect() };
+        inline.insert((0, 1), whole());
+        emphasize_rewritten(0, &hunk, &mut inline);
+        assert_eq!(inline.get(&(0, 0)), Some(&whole()));
+        assert_eq!(inline.get(&(0, 2)), Some(&whole()));
+        // 已有字符级差异的保持不变;纯新增块不加深
+        assert_eq!(inline.get(&(0, 1)), Some(&whole()));
+        assert!(!inline.contains_key(&(0, 4)));
     }
 }

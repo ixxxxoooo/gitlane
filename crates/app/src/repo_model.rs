@@ -3,7 +3,8 @@
 
 use crate::command::{self, Command};
 use futures::StreamExt as _;
-use gitcore::diff::{DiffTarget, FileDiff, file_diff};
+use gitcore::diff::{DiffTarget, FileDiff, LARGE_DIFF_LINES, file_diff, side_texts};
+use gitcore::highlight::{DiffSyntax, highlight_diff};
 use gitcore::undo::{self, UndoEntry, UndoStack};
 use gitcore::watch::{Change, RepoWatcher};
 use gitcore::{Cancel, CommitDetail, Error, History, Oid, Refs, Repo, RepoStatus};
@@ -16,6 +17,8 @@ use std::time::{Duration, Instant};
 
 /// 文件变化的防抖时间:外部工具批量写文件时只刷新一次。
 const WATCH_DEBOUNCE: Duration = Duration::from_millis(300);
+/// 语法高亮读取完整文件的大小上限,更大的文件只按 hunk 高亮。
+const SYNTAX_MAX_FILE_BYTES: usize = 2 * 1024 * 1024;
 
 /// 历史 + 图布局 + 引用,一次加载、整体替换。
 pub struct RepoData {
@@ -38,6 +41,8 @@ pub struct DiffState {
     pub path: String,
     /// `None` 表示加载中。
     pub file: Option<Arc<FileDiff>>,
+    /// 与 `file` 同时到达;不认识的语言或超大 diff 为 `None`。
+    pub syntax: Option<Arc<DiffSyntax>>,
     pub error: Option<String>,
 }
 
@@ -397,33 +402,59 @@ impl RepoModel {
             .diff
             .take()
             .filter(|d| keep_old && d.path == path && d.target == target);
+        let (file, syntax) = old.map(|d| (d.file, d.syntax)).unwrap_or_default();
+        let had_old = file.is_some();
         self.diff = Some(DiffState {
             target,
             path: path.clone(),
-            file: old.and_then(|d| d.file),
+            file,
+            syntax,
             error: None,
         });
         let repo_path = self.path.clone();
         let p = path.clone();
         let context = self.diff_context;
-        let task = cx.background_spawn(async move {
-            let repo = Repo::open(&repo_path)?;
-            file_diff(&repo, target, &p, force_full, context)
+        let task = cx.background_spawn({
+            let repo_path = repo_path.clone();
+            async move {
+                let repo = Repo::open(&repo_path)?;
+                file_diff(&repo, target, &p, force_full, context)
+            }
         });
         cx.spawn(async move |this, cx| {
-            let result = task.await;
-            let _ = this.update(cx, |this, cx| {
-                if generation != this.diff_gen {
+            let file = match task.await {
+                Ok(f) => Arc::new(f),
+                Err(e) => {
+                    let _ = this.update(cx, |this, cx| {
+                        if let Some(d) = this.diff.as_mut().filter(|_| generation == this.diff_gen)
+                        {
+                            d.error = Some(e.to_string());
+                            cx.notify();
+                        }
+                    });
                     return;
                 }
-                if let Some(d) = &mut this.diff {
-                    match result {
-                        Ok(f) => d.file = Some(Arc::new(f)),
-                        Err(e) => d.error = Some(e.to_string()),
+            };
+            let set = |file: Arc<FileDiff>, syntax: Option<DiffSyntax>, cx: &mut gpui::AsyncApp| {
+                let _ = this.update(cx, |this, cx| {
+                    if let Some(d) = this.diff.as_mut().filter(|_| generation == this.diff_gen) {
+                        d.file = Some(file);
+                        d.syntax = syntax.map(Arc::new);
+                        cx.notify();
                     }
-                }
-                cx.notify();
-            });
+                });
+            };
+            // 高亮比 diff 慢得多(大文件要几百毫秒):首次打开先显示无高亮的 diff;
+            // 刷新时旧内容还在,等高亮算完一起替换,避免闪一下无高亮的版本
+            if !had_old {
+                set(file.clone(), None, cx);
+            }
+            let f = file.clone();
+            let syntax = cx
+                .background_executor()
+                .spawn(async move { load_syntax(&repo_path, target, &f) })
+                .await;
+            set(file, syntax, cx);
         })
         .detach();
         cx.notify();
@@ -668,4 +699,17 @@ fn load_full(path: &Path, limit: usize) -> gitcore::Result<(RepoData, RepoStatus
         },
         status,
     ))
+}
+
+/// 后台计算 diff 的语法高亮;二进制、超大 diff 或不认识的语言返回 `None`。
+fn load_syntax(repo_path: &Path, target: DiffTarget, file: &FileDiff) -> Option<DiffSyntax> {
+    if file.binary || file.hunks.is_empty() || file.line_count() > LARGE_DIFF_LINES {
+        return None;
+    }
+    let started = Instant::now();
+    let repo = Repo::open(repo_path).ok()?;
+    let (old, new) = side_texts(&repo, target, file, SYNTAX_MAX_FILE_BYTES);
+    let syntax = highlight_diff(file, old.as_deref(), new.as_deref());
+    log::debug!("高亮 {} 用时 {:?}", file.path, started.elapsed());
+    syntax
 }

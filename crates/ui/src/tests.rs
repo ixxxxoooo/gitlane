@@ -191,6 +191,26 @@ async fn line_level_staging_through_the_ui(cx: &mut TestAppContext) {
     })
     .await;
 
+    // 语法高亮晚于 diff 到达,视图的行缓存要换上它(不重建行布局)
+    let r = repo.clone();
+    cx.wait_for(handle.into(), TIMEOUT, move |_, cx| {
+        r.read(cx).diff.as_ref().is_some_and(|d| d.syntax.is_some())
+    })
+    .await;
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        let view = root.read(cx).active_view(cx).unwrap();
+        let cache = view.read(cx).diff_cache.as_ref().expect("diff 已渲染");
+        let syntax = cache.syntax.as_ref().expect("缓存里有高亮");
+        let fn_line = cache.file.hunks[0]
+            .lines
+            .iter()
+            .position(|l| l.text.starts_with("fn main"))
+            .unwrap();
+        assert!(syntax.line(0, fn_line).iter().any(|(_, n)| *n == "keyword"));
+    })
+    .unwrap();
+
     // 选中 hunk 里的新增行(“let x = 2;”),只暂存这一行
     cx.update_window(handle.into(), |_, window, cx| {
         let view = root.read(cx).active_view(cx).unwrap();
