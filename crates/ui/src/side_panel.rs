@@ -51,13 +51,13 @@ impl RepoView {
     ) -> impl IntoElement + use<> {
         let selection = self.repo.read(cx).selection;
         // 选中历史提交时只显示这个提交的详情(没有暂存区和提交框,历史提交不能再改);
-        // 只有选中 Working changes 才显示暂存区:未暂存、已暂存、固定在底部的提交框
+        // 只有选中 Working changes 才显示暂存区:已暂存在上、未暂存在下、固定在底部的提交框
         let panel = v_flex().w(width).flex_none().h_full();
         let panel = if matches!(selection, Selection::Commit(_)) {
             panel.child(self.render_details(cx))
         } else {
             let (unstaged, staged, commit_box) = self.render_staging(window, cx);
-            panel.child(unstaged).child(staged).child(commit_box)
+            panel.child(staged).child(unstaged).child(commit_box)
         };
         panel.id("side-panel").test_support()
     }
