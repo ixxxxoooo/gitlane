@@ -148,7 +148,7 @@ pub fn handle(
         .flex_none()
         .flex()
         .when(at_end, |d| d.justify_end())
-        .when(!at_end, |d| d.justify_center())
+        .when(!at_end, |d| d.justify_start())
         .when_some(fill, |d, c| d.bg(c))
         .cursor(CursorStyle::ResizeColumn)
         .group(id)

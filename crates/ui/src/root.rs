@@ -437,6 +437,13 @@ impl GitlaneWindow {
                             this.workspace.update(cx, |ws, cx| ws.close_repo(i, cx))
                         })),
                 )
+                // 中键关闭标签(和浏览器、编辑器一致),抬起时触发
+                .on_mouse_up(
+                    MouseButton::Middle,
+                    cx.listener(move |this, _, _, cx| {
+                        this.workspace.update(cx, |ws, cx| ws.close_repo(i, cx))
+                    }),
+                )
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.workspace.update(cx, |ws, cx| ws.activate(i, cx));
                     if let Some(v) = this.active_view(cx) {
