@@ -504,6 +504,13 @@ impl RepoView {
             repo.undo.peek_redo().map(|e| format!("重做:{}", e.label)),
         );
         let head = repo.head_label();
+        // 当前分支相对上游的 (领先, 落后);没有上游或没有差异时都是 0
+        let (ahead, behind) = repo
+            .data
+            .as_ref()
+            .and_then(|d| d.refs.refs.iter().find(|r| r.is_head))
+            .and_then(|r| r.ahead_behind)
+            .unwrap_or((0, 0));
         let theme = cx.theme().clone();
         let sep = || div().w(px(1.)).h(px(18.)).mx_1().bg(theme.border);
         let git_icon = |name: gpui::assets::IconName| Icon::from(name);
@@ -526,7 +533,18 @@ impl RepoView {
                             .small()
                             .text_color(theme.muted_foreground),
                     )
-                    .child(div().truncate().child(head)),
+                    .child(div().truncate().child(head))
+                    .when(ahead > 0 || behind > 0, |d| {
+                        d.child(
+                            h_flex()
+                                .gap_1()
+                                .text_xs()
+                                .font_weight(FontWeight::NORMAL)
+                                .text_color(theme.muted_foreground)
+                                .when(ahead > 0, |d| d.child(format!("↑{ahead}")))
+                                .when(behind > 0, |d| d.child(format!("↓{behind}"))),
+                        )
+                    }),
             )
             .child(sep())
             .child(
@@ -574,7 +592,14 @@ impl RepoView {
                     .small()
                     .ghost()
                     .icon(git_icon(gpui::assets::IconName::ArrowDownToLine))
-                    .label("Pull")
+                    .label(if behind > 0 {
+                        format!("Pull ↓{behind}")
+                    } else {
+                        "Pull".to_string()
+                    })
+                    .when(behind > 0, |b| {
+                        b.tooltip(format!("上游有 {behind} 个本地没有的提交,点击拉取"))
+                    })
                     .disabled(busy)
                     .on_click(cx.listener(|this, _, _, cx| this.run(Command::Pull, cx))),
             )
@@ -583,7 +608,14 @@ impl RepoView {
                     .small()
                     .ghost()
                     .icon(git_icon(gpui::assets::IconName::ArrowUpFromLine))
-                    .label("Push")
+                    .label(if ahead > 0 {
+                        format!("Push ↑{ahead}")
+                    } else {
+                        "Push".to_string()
+                    })
+                    .when(ahead > 0, |b| {
+                        b.tooltip(format!("本地有 {ahead} 个提交还没推送,点击推送"))
+                    })
                     .disabled(busy)
                     .on_click(
                         cx.listener(|this, _, _, cx| this.run(Command::Push { force: false }, cx)),

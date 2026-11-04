@@ -7,7 +7,7 @@ use gitcore::diff::{DiffTarget, FileDiff, LineKind, inline_changes, pair_changed
 use gitcore::highlight::DiffSyntax;
 use gitcore::patch::PatchDirection;
 use gpui::component::button::{Button, ButtonVariants};
-use gpui::component::{ActiveTheme, Icon, IconName, Sizable, h_flex, v_flex};
+use gpui::component::{ActiveTheme, Sizable, h_flex, v_flex};
 use gpui::prelude::*;
 use gpui::*;
 use std::collections::{BTreeSet, HashMap};
@@ -343,7 +343,7 @@ impl RepoView {
             .border_color(theme.border)
             .bg(theme.secondary)
             .child(
-                Icon::new(IconName::File)
+                crate::file_icons::file_icon(path)
                     .xsmall()
                     .text_color(theme.muted_foreground),
             )

@@ -8,6 +8,7 @@ mod assets;
 mod colors;
 mod dialogs;
 mod diff_view;
+mod file_icons;
 mod format;
 mod graph_canvas;
 mod graph_view;

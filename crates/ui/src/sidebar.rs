@@ -237,7 +237,7 @@ impl RepoView {
         let collapsed = self.collapsed.contains(title);
         let theme = cx.theme().clone();
         let icon = match title {
-            "本地分支" => Icon::from(gpui::assets::IconName::Laptop),
+            "本地分支" => Icon::from(gpui::assets::IconName::Briefcase),
             "远程" => Icon::from(IconName::Globe),
             "标签" => Icon::from(gpui::assets::IconName::Tag),
             _ => Icon::from(gpui::assets::IconName::Archive),
