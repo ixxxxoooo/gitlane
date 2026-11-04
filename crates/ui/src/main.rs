@@ -25,6 +25,8 @@ mod tests;
 #[cfg(test)]
 mod tests_panels;
 #[cfg(test)]
+mod tests_sidebar;
+#[cfg(test)]
 mod tests_welcome;
 mod updater;
 

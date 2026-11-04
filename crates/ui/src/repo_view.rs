@@ -36,8 +36,9 @@ pub struct RepoView {
     pub(crate) collapsed: HashSet<String>,
     /// 左侧引用树顶部的筛选框。
     pub(crate) sidebar_filter: Entity<InputState>,
-    pub(crate) sidebar_rows: std::rc::Rc<Vec<crate::sidebar::SidebarRow>>,
-    pub(crate) sidebar_scroll: UniformListScrollHandle,
+    pub(crate) sidebar_rows: std::rc::Rc<Vec<crate::sidebar::SidebarSection>>,
+    /// 侧栏每个面板各一个滚动句柄,按面板顺序。
+    pub(crate) sidebar_scrolls: Vec<UniformListScrollHandle>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -101,7 +102,9 @@ impl RepoView {
             collapsed: HashSet::new(),
             sidebar_filter,
             sidebar_rows: Default::default(),
-            sidebar_scroll: UniformListScrollHandle::new(),
+            sidebar_scrolls: (0..crate::sidebar::SECTION_COUNT)
+                .map(|_| UniformListScrollHandle::new())
+                .collect(),
             _subscriptions: subscriptions,
         }
     }

@@ -6,7 +6,7 @@ use gitcore::{RefInfo, RefKind};
 use gpui::base::TestSupportExt as _;
 use gpui::component::input::Input;
 use gpui::component::menu::{ContextMenuExt, PopupMenuItem};
-use gpui::component::{ActiveTheme, Icon, IconName, Sizable, h_flex};
+use gpui::component::{ActiveTheme, Icon, IconName, Sizable, h_flex, v_flex};
 use gpui::prelude::*;
 use gpui::*;
 use std::collections::{BTreeMap, HashSet};
@@ -14,13 +14,9 @@ use std::rc::Rc;
 
 const ROW_HEIGHT: f32 = 26.;
 
-/// 引用树拍平后的一行。树可能有上千个引用,所以用固定行高的虚拟列表,只渲染可见行。
+/// 引用树拍平后的一行。树可能有上千个引用,所以每个面板用固定行高的虚拟列表,只渲染可见行。
 #[derive(Clone, Debug)]
 pub(crate) enum SidebarRow {
-    Section {
-        title: &'static str,
-        count: usize,
-    },
     /// 按前缀分组的文件夹,`key` 用于记录折叠状态。
     Group {
         key: String,
@@ -34,24 +30,38 @@ pub(crate) enum SidebarRow {
         depth: usize,
     },
     /// `pos` 是在 `refs.stashes` 中的下标。
-    Stash {
-        pos: usize,
-    },
+    Stash { pos: usize },
 }
 
-/// 按当前折叠状态拍平引用树。`filter` 非空时只保留名称包含它的引用(不区分大小写),
-/// 此时忽略折叠状态、全部展开,并隐藏没有命中的分区。
+/// 侧栏的一个面板(本地分支 / 远程 / 标签 / Stash)。展开的面板平分侧栏剩余高度,各自滚动。
+#[derive(Clone, Debug)]
+pub(crate) struct SidebarSection {
+    pub title: &'static str,
+    pub count: usize,
+    pub open: bool,
+    /// 收起时为空。
+    pub rows: Vec<SidebarRow>,
+}
+
+/// 面板数量,固定顺序:本地分支、远程、标签、Stash。
+pub(crate) const SECTION_COUNT: usize = 4;
+
+/// 按当前折叠状态拆成四个面板并拍平各自的行。`filter` 非空时只保留名称包含它的引用(不区分大小写),
+/// 此时忽略折叠状态、全部展开,并隐藏没有命中的面板。
 pub(crate) fn flatten_refs(
     refs: &gitcore::Refs,
     collapsed: &HashSet<String>,
     filter: &str,
-) -> Vec<SidebarRow> {
-    let mut rows = Vec::new();
+) -> Vec<SidebarSection> {
+    let mut sections = Vec::new();
     let filter = filter.trim().to_lowercase();
     let filtering = !filter.is_empty();
     let no_collapse = HashSet::new();
     let collapsed = if filtering { &no_collapse } else { collapsed };
-    let tree = |rows: &mut Vec<SidebarRow>, scope: &str, title: &'static str, kind: RefKind| {
+    let tree = |sections: &mut Vec<SidebarSection>,
+                scope: &str,
+                title: &'static str,
+                kind: RefKind| {
         let items: Vec<usize> = (0..refs.refs.len())
             .filter(|&i| refs.refs[i].kind == kind)
             .filter(|&i| !filtering || refs.refs[i].short.to_lowercase().contains(&filter))
@@ -59,67 +69,76 @@ pub(crate) fn flatten_refs(
         if filtering && items.is_empty() {
             return;
         }
-        rows.push(SidebarRow::Section {
-            title,
-            count: items.len(),
-        });
-        if collapsed.contains(title) {
-            return;
-        }
-        if kind == RefKind::Tag {
+        let open = !collapsed.contains(title);
+        let count = items.len();
+        let mut rows = Vec::new();
+        if open && kind == RefKind::Tag {
             rows.extend(items.into_iter().map(|index| SidebarRow::Ref {
                 index,
                 label: refs.refs[index].short.clone(),
                 depth: 1,
             }));
-            return;
-        }
-        // 名称里带 `/` 的按第一段分组成树,如 feature/a、feature/b → feature
-        let mut groups: BTreeMap<&str, Vec<(usize, &str)>> = BTreeMap::new();
-        for &index in &items {
-            let short = refs.refs[index].short.as_str();
-            match short.split_once('/') {
-                Some((prefix, rest)) => groups.entry(prefix).or_default().push((index, rest)),
-                None => rows.push(SidebarRow::Ref {
-                    index,
-                    label: short.to_string(),
-                    depth: 1,
-                }),
+        } else if open {
+            // 名称里带 `/` 的按第一段分组成树,如 feature/a、feature/b → feature
+            let mut groups: BTreeMap<&str, Vec<(usize, &str)>> = BTreeMap::new();
+            for &index in &items {
+                let short = refs.refs[index].short.as_str();
+                match short.split_once('/') {
+                    Some((prefix, rest)) => groups.entry(prefix).or_default().push((index, rest)),
+                    None => rows.push(SidebarRow::Ref {
+                        index,
+                        label: short.to_string(),
+                        depth: 1,
+                    }),
+                }
+            }
+            for (prefix, members) in groups {
+                let key = format!("{scope}:{prefix}");
+                let group_open = !collapsed.contains(&key);
+                rows.push(SidebarRow::Group {
+                    key,
+                    prefix: prefix.to_string(),
+                    count: members.len(),
+                });
+                if group_open {
+                    rows.extend(members.into_iter().map(|(index, rest)| SidebarRow::Ref {
+                        index,
+                        label: rest.to_string(),
+                        depth: 2,
+                    }));
+                }
             }
         }
-        for (prefix, members) in groups {
-            let key = format!("{scope}:{prefix}");
-            let open = !collapsed.contains(&key);
-            rows.push(SidebarRow::Group {
-                key,
-                prefix: prefix.to_string(),
-                count: members.len(),
-            });
-            if open {
-                rows.extend(members.into_iter().map(|(index, rest)| SidebarRow::Ref {
-                    index,
-                    label: rest.to_string(),
-                    depth: 2,
-                }));
-            }
-        }
+        sections.push(SidebarSection {
+            title,
+            count,
+            open,
+            rows,
+        });
     };
-    tree(&mut rows, "local", "本地分支", RefKind::Local);
-    tree(&mut rows, "remote", "远程", RefKind::Remote);
-    tree(&mut rows, "tag", "标签", RefKind::Tag);
+    tree(&mut sections, "local", "本地分支", RefKind::Local);
+    tree(&mut sections, "remote", "远程", RefKind::Remote);
+    tree(&mut sections, "tag", "标签", RefKind::Tag);
     let stashes: Vec<usize> = (0..refs.stashes.len())
         .filter(|&i| !filtering || refs.stashes[i].message.to_lowercase().contains(&filter))
         .collect();
     if !filtering || !stashes.is_empty() {
-        rows.push(SidebarRow::Section {
+        let open = !collapsed.contains("Stash");
+        sections.push(SidebarSection {
             title: "Stash",
             count: stashes.len(),
+            open,
+            rows: if open {
+                stashes
+                    .into_iter()
+                    .map(|pos| SidebarRow::Stash { pos })
+                    .collect()
+            } else {
+                Vec::new()
+            },
         });
-        if !collapsed.contains("Stash") {
-            rows.extend(stashes.into_iter().map(|pos| SidebarRow::Stash { pos }));
-        }
     }
-    rows
+    sections
 }
 
 impl RepoView {
@@ -138,7 +157,7 @@ impl RepoView {
             )),
             None => Rc::default(),
         };
-        let count = self.sidebar_rows.len();
+        let sections = self.sidebar_rows.clone();
 
         div()
             .w(width)
@@ -172,38 +191,63 @@ impl RepoView {
                     .pb_1()
                     .child(Input::new(&self.sidebar_filter).small().cleanable(true)),
             )
-            .child(
-                div().flex_1().min_h_0().child(
-                    uniform_list(
-                        "sidebar",
-                        count,
-                        cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-                            this.render_sidebar_rows(range, cx)
-                        }),
+            .children(sections.iter().enumerate().map(|(si, sec)| {
+                // 标题行固定高度;展开的面板 flex_1 且基准为 0,所以展开几个就几等分剩余高度,
+                // 收起的只剩标题行,按固定顺序紧挨着相邻面板
+                let header = self.section(sec.title, sec.count, cx).into_any_element();
+                let body = sec.open.then(|| {
+                    let body = div().flex_1().min_h_0().overflow_hidden();
+                    if sec.rows.is_empty() {
+                        return body
+                            .px_3()
+                            .py_1()
+                            .text_xs()
+                            .text_color(theme.muted_foreground)
+                            .child("暂无")
+                            .into_any_element();
+                    }
+                    body.child(
+                        uniform_list(
+                            SharedString::from(format!("sidebar-{si}")),
+                            sec.rows.len(),
+                            cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
+                                this.render_sidebar_rows(si, range, cx)
+                            }),
+                        )
+                        .track_scroll(&self.sidebar_scrolls[si])
+                        .size_full(),
                     )
-                    .track_scroll(&self.sidebar_scroll)
-                    .size_full(),
-                ),
-            )
+                    .into_any_element()
+                });
+                v_flex()
+                    .id(SharedString::from(format!("sidebar-panel-{si}")))
+                    .test_support()
+                    .when(sec.open, |d| d.flex_1())
+                    .min_h_0()
+                    .child(header)
+                    .children(body)
+            }))
             .id("sidebar")
             .test_support()
     }
 
+    /// 渲染第 `section` 个面板里 `range` 范围内的行。
     fn render_sidebar_rows(
         &mut self,
+        section: usize,
         range: std::ops::Range<usize>,
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
-        let rows = self.sidebar_rows.clone();
+        let sections = self.sidebar_rows.clone();
+        let Some(rows) = sections.get(section).map(|s| &s.rows) else {
+            return Vec::new();
+        };
         let Some(data) = self.repo.read(cx).data.clone() else {
             return Vec::new();
         };
         rows[range.start.min(rows.len())..range.end.min(rows.len())]
             .iter()
             .map(|row| match row {
-                SidebarRow::Section { title, count } => {
-                    self.section(title, *count, cx).into_any_element()
-                }
                 SidebarRow::Group { key, prefix, count } => {
                     self.group_row(key, prefix, *count, cx).into_any_element()
                 }
@@ -245,6 +289,7 @@ impl RepoView {
         h_flex()
             .w_full()
             .id(title)
+            .test_support()
             .h(px(ROW_HEIGHT))
             .px_2()
             .gap_1p5()
@@ -609,7 +654,7 @@ pub struct StashDropAction(pub usize);
 #[cfg(test)]
 mod tests {
     // 不能 `use super::*`:会把 gpui 的 `test` 宏一起导入,遮住标准的 #[test]
-    use super::{SidebarRow, flatten_refs};
+    use super::{SidebarRow, SidebarSection, flatten_refs};
     use gitcore::{Head, Oid, RefInfo, RefKind, Refs};
     use std::collections::HashSet;
 
@@ -630,15 +675,19 @@ mod tests {
         }
     }
 
-    fn shape(rows: &[SidebarRow]) -> Vec<String> {
-        rows.iter()
-            .map(|row| match row {
-                SidebarRow::Section { title, count } => format!("# {title} {count}"),
+    /// 把四个面板展平成文本:标题行 `# 标题 数量`(收起的加 `-`),后面跟各行。
+    fn shape(sections: &[SidebarSection]) -> Vec<String> {
+        let mut out = Vec::new();
+        for sec in sections {
+            let fold = if sec.open { "" } else { " -" };
+            out.push(format!("# {} {}{fold}", sec.title, sec.count));
+            out.extend(sec.rows.iter().map(|row| match row {
                 SidebarRow::Group { prefix, .. } => format!("+ {prefix}"),
                 SidebarRow::Ref { label, depth, .. } => format!("{}{label}", "  ".repeat(*depth)),
                 SidebarRow::Stash { pos } => format!("stash {pos}"),
-            })
-            .collect()
+            }));
+        }
+        out
     }
 
     #[test]
@@ -689,7 +738,7 @@ mod tests {
                 "# 远程 1",
                 "+ origin",
                 "    main",
-                "# 标签 1",
+                "# 标签 1 -",
                 "# Stash 0"
             ]
         );
