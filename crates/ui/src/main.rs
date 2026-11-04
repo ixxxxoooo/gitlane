@@ -28,6 +28,8 @@ mod tests_layout;
 #[cfg(test)]
 mod tests_panels;
 #[cfg(test)]
+mod tests_selection;
+#[cfg(test)]
 mod tests_sidebar;
 #[cfg(test)]
 mod tests_welcome;

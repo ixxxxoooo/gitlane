@@ -338,6 +338,7 @@ impl RepoModel {
             .is_some_and(|d| matches!(d.target, DiffTarget::Commit(_)))
         {
             self.diff = None;
+            self.diff_gen += 1;
         }
         cx.notify();
     }
@@ -348,6 +349,7 @@ impl RepoModel {
         }
         self.selection = Selection::Commit(oid);
         self.diff = None;
+        self.diff_gen += 1;
         self.detail = None;
         self.detail_gen += 1;
         let generation = self.detail_gen;
@@ -360,14 +362,9 @@ impl RepoModel {
                     return;
                 }
                 match result {
-                    Ok(detail) => {
-                        // 只改了一个文件时直接打开它的 diff
-                        if let [only] = detail.files.as_slice() {
-                            let p = only.path.clone();
-                            this.load_diff(DiffTarget::Commit(oid), p, false, false, cx);
-                        }
-                        this.detail = Some(Arc::new(detail));
-                    }
+                    // 不自动打开文件:切换提交后要看哪个文件由用户自己点,
+                    // 否则切走再切回来,会又把上次看的那个文件打开
+                    Ok(detail) => this.detail = Some(Arc::new(detail)),
                     Err(e) => this.notice(NoticeKind::Error, e.to_string(), cx),
                 }
                 cx.notify();
