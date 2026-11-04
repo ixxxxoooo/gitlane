@@ -106,3 +106,56 @@ async fn right_panels_split_the_height_equally(cx: &mut TestAppContext) {
     let h = side_heights(handle, &["unstaged", "staged"], cx);
     assert!(close(h[0], h[1]), "恢复两等分:{h:?}");
 }
+
+#[gpui::test]
+async fn staging_area_only_exists_on_working_changes(cx: &mut TestAppContext) {
+    let dir = fixture();
+    let (handle, root) = open(cx, dir.path());
+    let repo = repo(&root, cx);
+    let r = repo.clone();
+    cx.wait_for(handle.into(), TIMEOUT, move |_, cx| {
+        let m = r.read(cx);
+        m.data.is_some() && m.status.is_some()
+    })
+    .await;
+    let has = |cx: &mut TestAppContext, id: &'static str| {
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.render_frame(cx);
+            window.try_find(id).is_some()
+        })
+        .unwrap()
+    };
+
+    // 默认在 Working changes:有暂存区和提交框,没有提交详情
+    assert!(has(cx, "side-section-unstaged") && has(cx, "commit"));
+    assert!(!has(cx, "side-section-details"));
+
+    // 选中历史提交:只有提交详情,没有暂存区和提交框
+    let head = cx.update(|cx| {
+        repo.read(cx)
+            .data
+            .as_ref()
+            .unwrap()
+            .refs
+            .head
+            .oid()
+            .unwrap()
+    });
+    cx.update(|cx| repo.update(cx, |r, cx| r.select_commit(head, cx)));
+    let r = repo.clone();
+    cx.wait_for(handle.into(), TIMEOUT, move |_, cx| {
+        r.read(cx).detail.is_some()
+    })
+    .await;
+    assert!(has(cx, "side-section-details"));
+    assert!(!has(cx, "side-section-unstaged") && !has(cx, "side-section-staged"));
+    assert!(!has(cx, "commit"), "历史提交上没有提交按钮");
+
+    // 在历史提交上按 ⌘L:切回 Working changes,提交框出现
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.dispatch_action(Box::new(crate::actions::FocusCommitMessage), cx)
+    })
+    .unwrap();
+    cx.run_until_parked();
+    assert!(has(cx, "commit") && has(cx, "side-section-unstaged"));
+}

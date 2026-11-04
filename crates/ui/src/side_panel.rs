@@ -50,22 +50,16 @@ impl RepoView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let selection = self.repo.read(cx).selection;
-        // 固定顺序:提交详情(仅选中提交时)、未暂存、已暂存;提交框固定在底部
-        let mut sections = Vec::new();
-        if matches!(selection, Selection::Commit(_)) {
-            sections.push(self.render_details(cx));
-        }
-        let (unstaged, staged, commit_box) = self.render_staging(window, cx);
-        sections.push(unstaged);
-        sections.push(staged);
-        v_flex()
-            .w(width)
-            .flex_none()
-            .h_full()
-            .children(sections)
-            .child(commit_box)
-            .id("side-panel")
-            .test_support()
+        // 选中历史提交时只显示这个提交的详情(没有暂存区和提交框,历史提交不能再改);
+        // 只有选中 Working changes 才显示暂存区:未暂存、已暂存、固定在底部的提交框
+        let panel = v_flex().w(width).flex_none().h_full();
+        let panel = if matches!(selection, Selection::Commit(_)) {
+            panel.child(self.render_details(cx))
+        } else {
+            let (unstaged, staged, commit_box) = self.render_staging(window, cx);
+            panel.child(unstaged).child(staged).child(commit_box)
+        };
+        panel.id("side-panel").test_support()
     }
 
     fn render_details(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -80,7 +74,14 @@ impl RepoView {
                 .text_color(theme.muted_foreground)
                 .child("加载中…")
                 .into_any_element();
-            return self.side_section("details", icon, "提交详情".into(), None::<Div>, loading, cx);
+            return self.side_section(
+                "details",
+                false,
+                (icon, "提交详情".into()),
+                None::<Div>,
+                loading,
+                cx,
+            );
         };
         let sha = detail.info.id.to_string();
         let short = gitcore::short_id(detail.info.id);
@@ -265,7 +266,14 @@ impl RepoView {
                 .min_h_0(),
             )
             .into_any_element();
-        self.side_section("details", icon, "提交详情".into(), None::<Div>, body, cx)
+        self.side_section(
+            "details",
+            false,
+            (icon, "提交详情".into()),
+            None::<Div>,
+            body,
+            cx,
+        )
     }
 
     /// 提交改动文件列表的可见行。一个提交可能改上千个文件,所以用虚拟列表。
@@ -533,16 +541,22 @@ impl RepoView {
         };
         let unstaged_panel = self.side_section(
             "unstaged",
-            Icon::new(IconName::File),
-            format!("未暂存 {}", unstaged.len()),
+            true,
+            (
+                Icon::new(IconName::File),
+                format!("未暂存 {}", unstaged.len()),
+            ),
             stage_all,
             scroll("staging-unstaged", unstaged_body),
             cx,
         );
         let staged_panel = self.side_section(
             "staged",
-            Icon::new(IconName::File),
-            format!("已暂存 {}", staged.len()),
+            true,
+            (
+                Icon::new(IconName::File),
+                format!("已暂存 {}", staged.len()),
+            ),
             unstage_all,
             scroll("staging-staged", staged_body),
             cx,

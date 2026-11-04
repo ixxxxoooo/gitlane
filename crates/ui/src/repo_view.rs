@@ -296,6 +296,10 @@ impl RepoView {
     }
 
     pub(crate) fn on_commit(&mut self, _: &Commit, window: &mut Window, cx: &mut Context<Self>) {
+        // 选中历史提交时界面上没有提交框,不响应 ⌘↵,避免看不见的提交
+        if self.repo.read(cx).selection != app::Selection::WorkingChanges {
+            return;
+        }
         let message = self.message.read(cx).value().to_string();
         if message.trim().is_empty() {
             window.push_notification(Notification::warning("请先填写提交信息"), cx);
@@ -334,6 +338,13 @@ impl RepoView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // 提交框只在 Working changes 下存在:先切过去,等下一帧渲染出来再聚焦
+        if self.repo.read(cx).selection != app::Selection::WorkingChanges {
+            self.repo.update(cx, |r, cx| r.select_working(cx));
+            let handle = self.message.focus_handle(cx);
+            window.on_next_frame(move |window, cx| handle.focus(window, cx));
+            return;
+        }
         self.message.focus_handle(cx).focus(window, cx);
     }
 
