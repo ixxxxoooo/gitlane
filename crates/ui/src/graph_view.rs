@@ -1,7 +1,7 @@
 //! 提交图:固定行高、虚拟滚动,只渲染可见行。最上方固定一行 Working changes。
 
 use crate::format;
-use crate::graph_canvas::{graph_cell, graph_width};
+use crate::graph_canvas::{graph_cell, graph_width, working_cell};
 use crate::repo_view::RepoView;
 use app::{Command, Selection};
 use gitcore::ops::ResetMode;
@@ -46,34 +46,38 @@ impl RepoView {
         let working_count = repo.status.as_ref().map_or(0, |s| s.entries.len());
         let working_selected = repo.selection == Selection::WorkingChanges;
 
+        // 工作区节点画在 HEAD 所在的列,用虚线与 HEAD 提交连起来
+        let dark = theme.mode.is_dark();
+        let head_row = data
+            .refs
+            .head
+            .oid()
+            .and_then(|oid| data.history.row_of.get(&oid))
+            .map(|r| *r as usize);
+        let (head_col, head_color) = head_row.map_or((0, 0), |r| {
+            let n = data.graph.node(r);
+            (n.column, n.color)
+        });
+
         let working_row = h_flex()
             .id("working-changes")
             .h(px(ROW_HEIGHT))
-            .px_2()
+            .pr_2()
             .gap_2()
             .text_sm()
-            .border_b_1()
-            .border_color(theme.border)
             .cursor_pointer()
             .when(working_selected, |d| d.bg(theme.list_active))
             .hover(|s| s.bg(theme.list_hover))
             .child(
                 div()
-                    .w(graph_width(columns))
                     .flex_none()
-                    .flex()
-                    .justify_center()
-                    .child(
-                        div()
-                            .size(px(9.))
-                            .rounded_full()
-                            .border_2()
-                            .border_color(theme.muted_foreground),
-                    ),
+                    .h_full()
+                    .child(working_cell(head_col, head_color, columns, dark)),
             )
             .child(
                 div()
-                    .font_weight(FontWeight::SEMIBOLD)
+                    .italic()
+                    .font_weight(FontWeight::MEDIUM)
                     .child("Working changes"),
             )
             .child(
@@ -197,6 +201,8 @@ impl RepoView {
                             theme.background
                         },
                         head_oid == Some(oid),
+                        // HEAD 是第一行时,上面的“工作区改动”虚线连到它
+                        row == 0 && head_oid == Some(oid),
                     )))
                     .child(
                         h_flex()
