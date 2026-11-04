@@ -6,6 +6,7 @@ mod actions;
 mod app_icon;
 mod assets;
 mod colors;
+mod commit_ai;
 mod copy_menu;
 mod dialogs;
 mod diff_stage;
@@ -19,12 +20,15 @@ mod panels;
 mod repo_view;
 mod root;
 mod scan_dialog;
+mod settings_ai;
 mod settings_view;
 mod side_panel;
 mod side_section;
 mod sidebar;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_ai;
 #[cfg(test)]
 mod tests_layout;
 #[cfg(test)]

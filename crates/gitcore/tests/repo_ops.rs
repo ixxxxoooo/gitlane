@@ -473,3 +473,34 @@ fn status_carries_line_stats_for_staged_unstaged_and_untracked() {
         "未跟踪文件整个算新增"
     );
 }
+
+#[test]
+fn change_context_prefers_staged_and_limits_size() {
+    use gitcore::change_context::{change_context, recent_subjects};
+    let f = Fixture::new();
+    f.commit_file("a.txt", "one\ntwo\n", "feat: 初始提交");
+    f.write("a.txt", "one\nTWO\n");
+    f.write("b.txt", "new\n");
+    let repo = f.repo();
+
+    // 没暂存:取工作区已跟踪文件的改动
+    let c = change_context(&repo, 10_000).unwrap();
+    assert!(!c.staged);
+    assert_eq!(c.files, 1);
+    assert!(c.patch.contains("-two") && c.patch.contains("+TWO"));
+
+    // 暂存 b.txt 后只看暂存的
+    f.git.stage_paths(&["b.txt"]).unwrap();
+    let c = change_context(&repo, 10_000).unwrap();
+    assert!(c.staged && c.files == 1);
+    assert!(c.patch.contains("+new") && !c.patch.contains("TWO"));
+
+    // 总长度上限:超出部分丢弃并标记
+    let tiny = change_context(&repo, 20).unwrap();
+    assert!(tiny.truncated && tiny.patch.len() <= 20);
+
+    assert_eq!(
+        recent_subjects(&repo, 5),
+        vec!["feat: 初始提交".to_string()]
+    );
+}

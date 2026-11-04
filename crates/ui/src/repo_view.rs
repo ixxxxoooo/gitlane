@@ -30,6 +30,8 @@ pub struct RepoView {
     pub(crate) search: Entity<InputState>,
     pub(crate) message: Entity<TextareaState>,
     pub(crate) amend: bool,
+    /// 正在让 AI 生成提交信息。
+    pub(crate) ai_busy: bool,
     /// 当前工作区 diff 中选中的行:(hunk, 行)。
     pub(crate) selected_lines: BTreeSet<(usize, usize)>,
     pub(crate) diff_cache: Option<DiffCache>,
@@ -118,6 +120,7 @@ impl RepoView {
             search,
             message,
             amend: false,
+            ai_busy: false,
             selected_lines: BTreeSet::new(),
             diff_cache: None,
             search_cursor: 0,

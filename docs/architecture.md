@@ -71,6 +71,7 @@
 | `diff_stage.rs` | 组件选中的行范围换算成 (hunk, 行)、暂存 / 丢弃命令、复制、语法高亮接线 |
 | `side_panel.rs` | 提交详情、暂存区、提交框 |
 | `dialogs.rs` / `palette.rs` | 确认与输入对话框、命令面板 |
+| `settings_ai.rs` / `commit_ai.rs` | 设置的“AI”页;提交框 ✦ 生成提交信息(后台读改动 + 调模型,结果填进输入框) |
 | `settings_view.rs` | 设置窗口(独立窗口,用 gpui-component 的 `setting::Settings`);只调用 `Workspace` 的方法,不直接调 git |
 | `app_icon.rs` | Dock 图标随主题切换(objc2 调 `NSApplication::setApplicationIconImage`) |
 | `actions.rs` | 动作、快捷键、命令面板条目 |

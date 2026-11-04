@@ -1,9 +1,10 @@
-//! 设置窗口(⌘,):通用、Git、提交图与 Diff、集成四页。
+//! 设置窗口(⌘,):通用、Git、提交图与 Diff、AI、集成五页。
 //!
 //! 应用设置改的是 `Workspace::settings`,改完立即保存并同步到已打开的仓库;
 //! Git 页改的是全局 `~/.gitconfig`,经 `Workspace` 在后台用系统 git 写入,本视图不直接调用 git。
 
 use crate::actions::CloseTab;
+use crate::settings_ai::{AiInputs, ai_page};
 use app::{Settings as AppSettings, TerminalApp, ThemePalette, ThemePreference, Workspace};
 use gitcore::config::{ConfigChange, GlobalConfig, PullMode};
 use gpui::component::input::{Input, InputEvent, InputState};
@@ -46,9 +47,10 @@ impl TextKey {
 }
 
 pub struct SettingsView {
-    workspace: Entity<Workspace>,
+    pub(crate) workspace: Entity<Workspace>,
     /// 与 `TextKey::ALL` 一一对应。
     inputs: [Entity<InputState>; 3],
+    pub(crate) ai_inputs: AiInputs,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -74,6 +76,8 @@ impl SettingsView {
                 })
             })
             .collect();
+        let ai_inputs = AiInputs::new(window, cx);
+        subs.extend(ai_inputs.subscribe(window, cx));
         // 全局配置加载完成(或写入失败后重新读取)时,把值填进没在编辑的输入框
         subs.push(cx.observe_in(&workspace, window, |this, _, window, cx| {
             this.sync_inputs(window, cx);
@@ -90,6 +94,7 @@ impl SettingsView {
         let mut this = Self {
             workspace,
             inputs,
+            ai_inputs,
             focus: cx.focus_handle(),
             _subscriptions: subs,
         };
@@ -103,6 +108,8 @@ impl SettingsView {
     }
 
     fn sync_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let ai = self.workspace.read(cx).settings.ai.clone();
+        self.ai_inputs.sync(&ai, window, cx);
         let Some(config) = self.workspace.read(cx).git_config.clone() else {
             return;
         };
@@ -392,6 +399,7 @@ impl Render for SettingsView {
             self.general_page(),
             self.git_page(cx),
             self.graph_page(),
+            ai_page(&self.workspace, &self.ai_inputs),
             self.integration_page(),
         ];
         div()
@@ -428,7 +436,7 @@ fn switch(
 }
 
 /// 应用设置的下拉项。下拉框的值是选项下标,当前值不在列表里时(手改过设置文件)按原值显示。
-fn choice<T: Copy + PartialEq + std::fmt::Debug + 'static>(
+pub(crate) fn choice<T: Copy + PartialEq + std::fmt::Debug + 'static>(
     ws: &Entity<Workspace>,
     options: Vec<(T, &'static str)>,
     default: T,

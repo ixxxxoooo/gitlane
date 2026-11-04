@@ -631,7 +631,25 @@ impl RepoView {
             .p_3()
             .gap_2()
             // 不再加顶边框:上面最后一个面板自带底边框,两条叠在一起会变成 2px 的粗线
-            .child(Textarea::new(&self.message).h(px(96.)))
+            .child(
+                div()
+                    .relative()
+                    .child(Textarea::new(&self.message).h(px(96.)))
+                    // 右下角的 AI 标识:根据待提交的改动生成提交信息
+                    .child(
+                        div().absolute().right_1().bottom_1().child(
+                            Button::new("ai-message")
+                                .xsmall()
+                                .ghost()
+                                .icon(Icon::from(gpui::assets::IconName::Sparkles))
+                                .tooltip("AI 生成提交信息")
+                                .loading(self.ai_busy)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.generate_message(window, cx)
+                                })),
+                        ),
+                    ),
+            )
             .child(
                 h_flex()
                     .gap_2()

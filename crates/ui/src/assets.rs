@@ -33,6 +33,7 @@ gpui::assets::icon_assets!(
         Minimize2,
         Minus,
         Plus,
+        Sparkles,
         Tag,
     ]
 );

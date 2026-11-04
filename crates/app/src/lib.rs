@@ -6,6 +6,7 @@
 //! - `update`:检查更新、下载校验、重启替换(走系统 curl,可脱离 GPUI 测试);
 //! - `workspace`:多仓库标签、设置、自动 fetch 与全局 git 配置。
 
+pub mod ai;
 pub mod avatar;
 pub mod command;
 pub mod repo_model;
@@ -14,6 +15,7 @@ pub mod settings;
 pub mod update;
 pub mod workspace;
 
+pub use ai::{AiConfig, AiProvider, CommitLanguage, CommitStyle};
 pub use command::{BusyAction, Command};
 pub use repo_model::{DiffState, NoticeKind, RepoData, RepoEvent, RepoModel, Selection};
 pub use settings::{Settings, TerminalApp, ThemePalette, ThemePreference, WindowMode, WindowState};

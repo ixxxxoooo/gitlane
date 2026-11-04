@@ -177,6 +177,8 @@ pub struct Settings {
     pub diff_maximized: bool,
     /// diff 区域占中间栏高度的比例,拖动提交图与 diff 之间的分隔条调整。
     pub diff_ratio: f32,
+    /// AI 生成提交信息的配置。
+    pub ai: crate::ai::AiConfig,
 }
 
 impl Default for Settings {
@@ -203,6 +205,7 @@ impl Default for Settings {
             side_collapsed: Vec::new(),
             diff_maximized: false,
             diff_ratio: 0.5,
+            ai: Default::default(),
         }
     }
 }
@@ -271,6 +274,7 @@ mod tests {
         assert!(s.fetch_avatars, "旧设置没有这个键,默认联网获取头像");
         assert_eq!(s.diff_ratio, 0.5, "旧设置没有这个键,diff 默认占一半高度");
         assert_eq!(s.palette, ThemePalette::Default, "旧设置没有配色,用默认");
+        assert_eq!(s.ai, crate::ai::AiConfig::default(), "旧设置没有 AI 配置");
         assert!(s.window.is_none() && s.active_repo.is_none() && !s.diff_maximized);
         assert!(s.sidebar_collapsed.is_empty() && s.side_collapsed.is_empty());
     }

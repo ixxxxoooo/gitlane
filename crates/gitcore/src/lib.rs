@@ -6,6 +6,7 @@
 //!
 //! 本 crate 的函数都是同步阻塞的,由应用层放到后台执行器里调用。
 
+pub mod change_context;
 pub mod cli;
 pub mod config;
 pub mod diff;
