@@ -437,7 +437,7 @@ impl RepoView {
                     gpui::assets::IconName::Maximize2
                 }))
                 .tooltip(if self.diff_maximized {
-                    "还原(显示提交图)"
+                    "还原(显示提交图,Esc)"
                 } else {
                     "撑满中间区域"
                 })

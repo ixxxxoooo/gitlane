@@ -1,7 +1,7 @@
 //! 单个仓库的状态 Entity。视图只读取这里的状态、只调用这里的方法;
 //! 所有 git 读写都在后台执行器里完成,结果写回后 `cx.notify()` 触发重绘。
 
-use crate::command::{self, Command};
+use crate::command::{self, BusyAction, Command};
 use futures::StreamExt as _;
 use gitcore::diff::{DiffTarget, FileDiff, LARGE_DIFF_LINES, file_diff, side_texts};
 use gitcore::highlight::{DiffSyntax, highlight_diff};
@@ -53,6 +53,8 @@ pub struct Busy {
     pub started: Instant,
     /// 后台自动执行(自动 fetch):成功不提示,失败只记日志。
     pub quiet: bool,
+    /// 对应工具栏哪个按钮;由那个按钮转圈。
+    pub action: BusyAction,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -543,6 +545,7 @@ impl RepoModel {
                     cancel: cmd.is_network().then(|| cancel.clone()),
                     started: Instant::now(),
                     quiet,
+                    action: cmd.busy_action(),
                 });
                 let c = cmd.clone();
                 let task = cx.background_spawn(async move { command::execute(&path, &c, &cancel) });
@@ -573,6 +576,7 @@ impl RepoModel {
                     cancel: None,
                     started: Instant::now(),
                     quiet: false,
+                    action: BusyAction::Other,
                 });
                 let e = entry.clone();
                 let task = cx.background_spawn(async move {

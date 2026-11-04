@@ -11,6 +11,17 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
 
+/// 正在执行的命令对应工具栏的哪个按钮,用来让那个按钮转圈。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BusyAction {
+    Fetch,
+    Pull,
+    Push,
+    Stash,
+    /// 没有对应按钮的命令(暂存、提交、撤销…)。
+    Other,
+}
+
 #[derive(Clone, Debug)]
 pub enum Command {
     StagePaths(Vec<String>),
@@ -130,6 +141,17 @@ impl Command {
             Command::CreateTag { name, .. } => format!("新建标签 {name}"),
             Command::DeleteTag(n) => format!("删除标签 {n}"),
             Command::AbortInProgress => "中止进行中的操作".into(),
+        }
+    }
+
+    /// 工具栏上与这条命令对应的按钮;执行期间由那个按钮转圈。没有对应按钮的是 `Other`。
+    pub fn busy_action(&self) -> BusyAction {
+        match self {
+            Command::Fetch => BusyAction::Fetch,
+            Command::Pull => BusyAction::Pull,
+            Command::Push { .. } => BusyAction::Push,
+            Command::StashPush { .. } => BusyAction::Stash,
+            _ => BusyAction::Other,
         }
     }
 
@@ -363,6 +385,18 @@ mod tests {
             "检出 0123456"
         );
         assert!(Command::Fetch.is_network());
+        // 工具栏上哪个按钮转圈:fetch / pull / push / stash 各有对应,其余没有
+        assert_eq!(Command::Fetch.busy_action(), BusyAction::Fetch);
+        assert_eq!(Command::Pull.busy_action(), BusyAction::Pull);
+        assert_eq!(
+            Command::Push { force: true }.busy_action(),
+            BusyAction::Push
+        );
+        assert_eq!(
+            Command::StashPush { message: None }.busy_action(),
+            BusyAction::Stash
+        );
+        assert_eq!(Command::StageAll.busy_action(), BusyAction::Other);
         assert!(!Command::StageAll.touches_history());
     }
 }

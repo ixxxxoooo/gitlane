@@ -357,7 +357,6 @@ impl GitlaneWindow {
         let tabs = ws.repos.iter().enumerate().map(|(i, repo)| {
             let r = repo.read(cx);
             let is_active = i == active;
-            let busy = r.busy.is_some();
             let group = SharedString::from(format!("tab-group-{i}"));
             // 胶囊式标签:当前标签浅灰底、字重加粗,其余只有弱化文字;关闭按钮只在悬停或当前标签上显示
             h_flex()
@@ -381,9 +380,6 @@ impl GitlaneWindow {
                 })
                 .child(Icon::new(IconName::Folder).xsmall())
                 .child(r.name.clone())
-                .when(busy, |d| {
-                    d.child(gpui::component::spinner::Spinner::new().xsmall())
-                })
                 .child(
                     Button::new(("close-tab", i))
                         .xsmall()

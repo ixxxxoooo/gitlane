@@ -372,6 +372,16 @@ impl RepoView {
         self.search.focus_handle(cx).focus(window, cx);
     }
 
+    /// Esc:diff 撑满时还原成上下分栏;没撑满时不处理,让 Esc 继续传给输入框等控件。
+    fn on_exit_maximized(&mut self, _: &ExitMaximizedDiff, _: &mut Window, cx: &mut Context<Self>) {
+        if self.diff_maximized {
+            self.diff_maximized = false;
+            cx.notify();
+        } else {
+            cx.propagate();
+        }
+    }
+
     fn on_focus_message(
         &mut self,
         _: &FocusCommitMessage,
@@ -581,6 +591,9 @@ impl RepoView {
     fn render_toolbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let repo = self.repo.read(cx);
         let busy = repo.busy.is_some();
+        // 正在执行的是哪个工具栏动作:那个按钮自己转圈(替换图标、保持可见),其余按钮置灰
+        let running = repo.busy.as_ref().map(|b| b.action);
+        let spin = |a: app::BusyAction| running == Some(a);
         let (undo_label, redo_label) = (
             repo.undo.peek_undo().map(|e| format!("撤销:{}", e.label)),
             repo.undo.peek_redo().map(|e| format!("重做:{}", e.label)),
@@ -666,7 +679,8 @@ impl RepoView {
                     .ghost()
                     .icon(IconName::RefreshCw)
                     .label("Fetch")
-                    .disabled(busy)
+                    .loading(spin(app::BusyAction::Fetch))
+                    .disabled(busy && !spin(app::BusyAction::Fetch))
                     .on_click(cx.listener(|this, _, _, cx| this.run(Command::Fetch, cx))),
             )
             .child(
@@ -682,7 +696,8 @@ impl RepoView {
                     .when(behind > 0, |b| {
                         b.tooltip(format!("上游有 {behind} 个本地没有的提交,点击拉取"))
                     })
-                    .disabled(busy)
+                    .loading(spin(app::BusyAction::Pull))
+                    .disabled(busy && !spin(app::BusyAction::Pull))
                     .on_click(cx.listener(|this, _, _, cx| this.run(Command::Pull, cx))),
             )
             .child(
@@ -698,7 +713,8 @@ impl RepoView {
                     .when(ahead > 0, |b| {
                         b.tooltip(format!("本地有 {ahead} 个提交还没推送,点击推送"))
                     })
-                    .disabled(busy)
+                    .loading(spin(app::BusyAction::Push))
+                    .disabled(busy && !spin(app::BusyAction::Push))
                     .on_click(
                         cx.listener(|this, _, _, cx| this.run(Command::Push { force: false }, cx)),
                     ),
@@ -721,7 +737,8 @@ impl RepoView {
                     .ghost()
                     .icon(git_icon(gpui::assets::IconName::Archive))
                     .label("Stash")
-                    .disabled(busy)
+                    .loading(spin(app::BusyAction::Stash))
+                    .disabled(busy && !spin(app::BusyAction::Stash))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.run(Command::StashPush { message: None }, cx)
                     })),
@@ -858,6 +875,7 @@ impl Render for RepoView {
             .on_action(cx.listener(Self::on_unstage_all))
             .on_action(cx.listener(Self::on_focus_search))
             .on_action(cx.listener(Self::on_focus_message))
+            .on_action(cx.listener(Self::on_exit_maximized))
             .on_action(cx.listener(Self::on_abort))
             .on_action(cx.listener(Self::on_toggle_split))
             .on_action(cx.listener(Self::on_select_next))

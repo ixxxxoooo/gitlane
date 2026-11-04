@@ -251,4 +251,19 @@ async fn diff_height_follows_ratio_and_can_be_maximized(cx: &mut TestAppContext)
     assert!(full > half, "撑满后更高:{full} vs {half}");
     click(handle, "maximize-diff", cx);
     assert!(has_graph(cx), "再点一次还原");
+
+    // 撑满后按 Esc 也能还原;没撑满时 Esc 什么都不改
+    click(handle, "maximize-diff", cx);
+    assert!(!has_graph(cx));
+    let esc = |cx: &mut TestAppContext| {
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.dispatch_action(Box::new(crate::actions::ExitMaximizedDiff), cx)
+        })
+        .unwrap();
+        cx.run_until_parked();
+    };
+    esc(cx);
+    assert!(has_graph(cx), "Esc 还原");
+    esc(cx);
+    assert!(has_graph(cx), "没撑满时 Esc 不改变界面");
 }

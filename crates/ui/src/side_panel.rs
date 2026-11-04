@@ -155,9 +155,12 @@ impl RepoView {
                             .text_xs()
                             .font_weight(FontWeight::SEMIBOLD)
                             .map(|d| match avatar {
-                                Some(path) => {
-                                    d.child(img(path).size_full().object_fit(ObjectFit::Cover))
-                                }
+                                Some(path) => d.child(
+                                    img(path)
+                                        .size_full()
+                                        .rounded_full()
+                                        .object_fit(ObjectFit::Cover),
+                                ),
                                 None => d.child(initial),
                             }),
                     )

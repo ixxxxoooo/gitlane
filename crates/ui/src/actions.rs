@@ -37,6 +37,7 @@ actions!(
         RevealInFinder,
         CheckForUpdates,
         InstallUpdate,
+        ExitMaximizedDiff,
     ]
 );
 
@@ -71,6 +72,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-shift-a", StageAll, Some(REPO_CONTEXT)),
         KeyBinding::new("cmd-shift-u", UnstageAll, Some(REPO_CONTEXT)),
         KeyBinding::new("cmd-\\", ToggleSplitDiff, Some(REPO_CONTEXT)),
+        // 只在 diff 撑满时才处理,其余时候 Esc 照常传给输入框等控件
+        KeyBinding::new("escape", ExitMaximizedDiff, Some(REPO_CONTEXT)),
         KeyBinding::new("down", SelectNextCommit, Some("CommitGraph")),
         KeyBinding::new("up", SelectPrevCommit, Some("CommitGraph")),
         KeyBinding::new("j", SelectNextCommit, Some("CommitGraph")),
