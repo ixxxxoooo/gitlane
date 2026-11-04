@@ -4,7 +4,7 @@
 //! Git 页改的是全局 `~/.gitconfig`,经 `Workspace` 在后台用系统 git 写入,本视图不直接调用 git。
 
 use crate::actions::CloseTab;
-use app::{Settings as AppSettings, TerminalApp, ThemePreference, Workspace};
+use app::{Settings as AppSettings, TerminalApp, ThemePalette, ThemePreference, Workspace};
 use gitcore::config::{ConfigChange, GlobalConfig, PullMode};
 use gpui::component::input::{Input, InputEvent, InputState};
 use gpui::component::setting::{SettingField, SettingGroup, SettingItem, SettingPage, Settings};
@@ -160,6 +160,19 @@ impl SettingsView {
                         ),
                     )
                     .description("也可以用 ⌘⇧T 在浅色与深色之间切换。"),
+                )
+                .item(
+                    SettingItem::new(
+                        "配色方案",
+                        choice(
+                            ws,
+                            ThemePalette::ALL.map(|p| (p, p.label())).to_vec(),
+                            AppSettings::default().palette,
+                            |s| s.palette,
+                            |s, v| s.palette = v,
+                        ),
+                    )
+                    .description("整个软件的底色与强调色,浅色、深色下各有一套;切换后立即生效。"),
                 ),
                 SettingGroup::new().title("启动").item(
                     SettingItem::new(

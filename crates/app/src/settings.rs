@@ -13,6 +13,49 @@ pub enum ThemePreference {
     System,
 }
 
+/// 配色方案:在亮色 / 暗色之外,整个软件的底色与强调色。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemePalette {
+    /// 组件库自带的配色。
+    #[default]
+    Default,
+    Indigo,
+    Ocean,
+    Forest,
+    Amber,
+    Rose,
+    Violet,
+    Graphite,
+}
+
+impl ThemePalette {
+    pub const ALL: [ThemePalette; 8] = [
+        ThemePalette::Default,
+        ThemePalette::Indigo,
+        ThemePalette::Ocean,
+        ThemePalette::Forest,
+        ThemePalette::Amber,
+        ThemePalette::Rose,
+        ThemePalette::Violet,
+        ThemePalette::Graphite,
+    ];
+
+    /// 设置里显示的名称。
+    pub fn label(self) -> &'static str {
+        match self {
+            ThemePalette::Default => "默认",
+            ThemePalette::Indigo => "靛蓝",
+            ThemePalette::Ocean => "海洋",
+            ThemePalette::Forest => "森林",
+            ThemePalette::Amber => "琥珀",
+            ThemePalette::Rose => "玫瑰",
+            ThemePalette::Violet => "紫罗兰",
+            ThemePalette::Graphite => "石墨",
+        }
+    }
+}
+
 /// “在终端中打开”使用的终端应用。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -96,6 +139,8 @@ impl WindowState {
 #[serde(default)]
 pub struct Settings {
     pub theme: ThemePreference,
+    /// 配色方案;与 `theme`(亮 / 暗 / 跟随系统)组合使用。
+    pub palette: ThemePalette,
     /// 上次退出时打开的仓库标签,启动时恢复。
     pub open_repos: Vec<PathBuf>,
     pub recent_repos: Vec<PathBuf>,
@@ -138,6 +183,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             theme: ThemePreference::Light,
+            palette: ThemePalette::Default,
             open_repos: Vec::new(),
             recent_repos: Vec::new(),
             history_limit: 100_000,
@@ -224,6 +270,7 @@ mod tests {
         assert!(s.auto_update_check, "旧设置没有这个键,默认自动检查更新");
         assert!(s.fetch_avatars, "旧设置没有这个键,默认联网获取头像");
         assert_eq!(s.diff_ratio, 0.5, "旧设置没有这个键,diff 默认占一半高度");
+        assert_eq!(s.palette, ThemePalette::Default, "旧设置没有配色,用默认");
         assert!(s.window.is_none() && s.active_repo.is_none() && !s.diff_maximized);
         assert!(s.sidebar_collapsed.is_empty() && s.side_collapsed.is_empty());
     }

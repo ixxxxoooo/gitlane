@@ -31,6 +31,7 @@ mod tests_panels;
 mod tests_sidebar;
 #[cfg(test)]
 mod tests_welcome;
+mod themes;
 mod updater;
 mod window_state;
 

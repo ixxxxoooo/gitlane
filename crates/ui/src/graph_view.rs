@@ -337,8 +337,14 @@ fn ref_badges(
                     theme.primary,
                     theme.primary.opacity(0.35),
                 ),
-                RefKind::Remote => (theme.secondary, theme.muted_foreground, theme.border),
-                RefKind::Tag => (theme.yellow_light, theme.yellow, theme.yellow.opacity(0.6)),
+                // 远程分支:偏冷的中性灰蓝,比组件库的 secondary 灰有层次,又不抢本地分支的风头
+                RefKind::Remote => (
+                    theme.foreground.opacity(0.06),
+                    theme.foreground.opacity(0.68),
+                    theme.foreground.opacity(0.16),
+                ),
+                // 标签:柔和的琥珀色,而不是高饱和的纯黄
+                RefKind::Tag => crate::colors::tag_badge(theme.mode.is_dark()),
             };
             let icon = |name: gpui::assets::IconName| {
                 Icon::from(name).xsmall().text_color(fg).into_any_element()

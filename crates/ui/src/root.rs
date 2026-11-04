@@ -6,7 +6,7 @@ use crate::repo_view::RepoView;
 use crate::scan_dialog::ScanView;
 use crate::settings_view::SettingsView;
 use crate::updater::UpdateState;
-use app::{ThemePreference, Workspace};
+use app::{ThemePalette, ThemePreference, Workspace};
 use gpui::base::Root;
 use gpui::component::button::{Button, ButtonVariants};
 use gpui::component::{
@@ -24,6 +24,8 @@ pub struct GitlaneWindow {
     focus: FocusHandle,
     /// 当前已应用的主题偏好;设置窗口改了主题后,在观察工作区时对比并重新应用。
     applied_theme: ThemePreference,
+    /// 当前已应用的配色方案,变化时重新套用。
+    applied_palette: ThemePalette,
     /// 已打开的设置窗口,再次打开时直接激活它。
     settings_window: Option<WindowHandle<Root>>,
     /// 应用更新流程的状态,见 `updater.rs`。
@@ -38,8 +40,11 @@ impl GitlaneWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let theme = workspace.read(cx).settings.theme;
-        apply_theme(theme, window, cx);
+        let (theme, palette) = {
+            let s = &workspace.read(cx).settings;
+            (s.theme, s.palette)
+        };
+        apply_theme(theme, palette, window, cx);
         for p in initial {
             let r = workspace.update(cx, |ws, cx| ws.open_repo(&p, cx));
             if let Err(e) = r {
@@ -47,10 +52,14 @@ impl GitlaneWindow {
             }
         }
         let sub = cx.observe_in(&workspace, window, |this, ws, window, cx| {
-            let theme = ws.read(cx).settings.theme;
-            if theme != this.applied_theme {
+            let (theme, palette) = {
+                let s = &ws.read(cx).settings;
+                (s.theme, s.palette)
+            };
+            if theme != this.applied_theme || palette != this.applied_palette {
                 this.applied_theme = theme;
-                apply_theme(theme, window, cx);
+                this.applied_palette = palette;
+                apply_theme(theme, palette, window, cx);
                 window.refresh();
             }
             this.sync_views(window, cx);
@@ -59,7 +68,7 @@ impl GitlaneWindow {
         // 跟随系统时,系统切换外观要跟着换
         let appearance = cx.observe_window_appearance(window, |this, window, cx| {
             if this.applied_theme == ThemePreference::System {
-                apply_theme(ThemePreference::System, window, cx);
+                apply_theme(ThemePreference::System, this.applied_palette, window, cx);
                 window.refresh();
             }
         });
@@ -75,6 +84,7 @@ impl GitlaneWindow {
             views: HashMap::new(),
             focus: cx.focus_handle(),
             applied_theme: theme,
+            applied_palette: palette,
             settings_window: None,
             update: UpdateState::default(),
             _subscriptions: vec![sub, appearance, bounds_tracker],
@@ -247,7 +257,7 @@ impl GitlaneWindow {
         };
         self.applied_theme = next;
         self.workspace.update(cx, |ws, cx| ws.set_theme(next, cx));
-        apply_theme(next, window, cx);
+        apply_theme(next, self.applied_palette, window, cx);
         // 提交图与 diff 的颜色按主题缓存在视图里,切换后整体重绘
         window.refresh();
     }
@@ -371,13 +381,14 @@ impl GitlaneWindow {
             let r = repo.read(cx);
             let is_active = i == active;
             let group = SharedString::from(format!("tab-group-{i}"));
-            // 胶囊式标签:当前标签浅灰底、字重加粗,其余只有弱化文字;关闭按钮只在悬停或当前标签上显示
+            // 胶囊式标签:当前标签浅灰底、字重加粗,其余只有弱化文字。
+            // 关闭按钮默认不显示也不占位,悬停时才浮在标签右侧出现,同时把名字淡化,避免文字与按钮叠在一起
             h_flex()
                 .id(("tab", i))
                 .group(group.clone())
+                .relative()
                 .h(px(26.))
-                .pl_2p5()
-                .pr_1()
+                .px_2p5()
                 .gap_1p5()
                 .rounded_lg()
                 .text_sm()
@@ -392,15 +403,21 @@ impl GitlaneWindow {
                         .hover(|s| s.bg(theme.muted.opacity(0.5)))
                 })
                 .child(Icon::from(gpui::assets::IconName::FolderGit2).xsmall())
-                .child(r.name.clone())
+                .child(
+                    div()
+                        .group_hover(group.clone(), |s| s.opacity(0.35))
+                        .child(r.name.clone()),
+                )
                 .child(
                     Button::new(("close-tab", i))
                         .xsmall()
                         .ghost()
+                        .absolute()
+                        .right(px(3.))
+                        .top(px(3.))
                         .icon(IconName::Close)
-                        .when(!is_active, |b| {
-                            b.invisible().group_hover(group.clone(), |s| s.visible())
-                        })
+                        .invisible()
+                        .group_hover(group.clone(), |s| s.visible())
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.workspace.update(cx, |ws, cx| ws.close_repo(i, cx))
                         })),
@@ -512,12 +529,19 @@ impl GitlaneWindow {
     }
 }
 
-pub fn apply_theme(pref: ThemePreference, window: &mut Window, cx: &mut App) {
+pub fn apply_theme(
+    pref: ThemePreference,
+    palette: ThemePalette,
+    window: &mut Window,
+    cx: &mut App,
+) {
     match pref {
         ThemePreference::Light => Theme::change(ThemeMode::Light, Some(window), cx),
         ThemePreference::Dark => Theme::change(ThemeMode::Dark, Some(window), cx),
         ThemePreference::System => Theme::sync_system_appearance(Some(window), cx),
     }
+    // 先换亮 / 暗(会重置颜色),再套配色方案
+    crate::themes::apply(palette, cx);
     crate::app_icon::set_dock_icon(cx.theme().mode.is_dark());
 }
 

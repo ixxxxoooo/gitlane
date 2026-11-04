@@ -1,6 +1,6 @@
 //! 提交图与 diff 的颜色。基础颜色来自 gpui-component 主题,这里只补充专用颜色。
 
-use gpui::{Hsla, hsla};
+use gpui::{Hsla, Rgba, hsla};
 
 /// 泳道调色板:亮暗主题下都清晰可辨的 8 种颜色。
 pub fn lane_color(index: u16, dark: bool) -> Hsla {
@@ -10,6 +10,36 @@ pub fn lane_color(index: u16, dark: bool) -> Hsla {
         hsla(h, 0.65, 0.62, 1.)
     } else {
         hsla(h, 0.7, 0.45, 1.)
+    }
+}
+
+/// 在 `base` 上叠 `over`,`t` 是 `over` 的占比(0..1),结果不透明。
+/// 列表高亮用它算实色,避免半透明色盖住提交图里“空心节点”的底色。
+pub fn mix(base: Hsla, over: Hsla, t: f32) -> Hsla {
+    let (a, b) = (Rgba::from(base), Rgba::from(over));
+    Hsla::from(Rgba {
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t,
+        a: 1.,
+    })
+}
+
+/// 标签徽章的 (背景, 文字, 边框):柔和的琥珀色,不用高饱和的纯黄。
+pub fn tag_badge(dark: bool) -> (Hsla, Hsla, Hsla) {
+    let hue = 34. / 360.;
+    if dark {
+        (
+            hsla(hue, 0.8, 0.55, 0.16),
+            hsla(hue, 0.85, 0.72, 1.),
+            hsla(hue, 0.8, 0.55, 0.38),
+        )
+    } else {
+        (
+            hsla(hue, 0.9, 0.5, 0.12),
+            hsla(hue, 0.85, 0.3, 1.),
+            hsla(hue, 0.85, 0.45, 0.35),
+        )
     }
 }
 

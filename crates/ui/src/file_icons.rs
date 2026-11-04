@@ -14,6 +14,7 @@ pub enum FileKind {
     Vue,
     Python,
     Go,
+    Dart,
     /// C / C++ / C# / Java / Kotlin / Swift 等编译型语言。
     Native,
     Markup,
@@ -53,8 +54,10 @@ impl FileKind {
             "vue" => Self::Vue,
             "py" => Self::Python,
             "go" => Self::Go,
-            "c" | "h" | "cc" | "cpp" | "hpp" | "cs" | "java" | "kt" | "swift" | "rb" | "php"
-            | "lua" => Self::Native,
+            "dart" => Self::Dart,
+            "c" | "h" | "cc" | "cpp" | "hpp" | "cs" | "java" | "kt" | "kts" | "swift" | "rb"
+            | "php" | "lua" | "scala" | "zig" | "ex" | "exs" | "hs" | "ml" | "clj" | "jl" | "r"
+            | "m" | "mm" => Self::Native,
             "html" | "htm" => Self::Markup,
             "css" | "scss" | "less" => Self::Style,
             "json" | "jsonc" | "json5" => Self::Json,
@@ -80,6 +83,7 @@ impl FileKind {
             | Self::Vue
             | Self::Python
             | Self::Go
+            | Self::Dart
             | Self::Native
             | Self::Markup
             | Self::Style => I::FileCode,
@@ -106,6 +110,7 @@ impl FileKind {
             Self::Vue => 150.,
             Self::Python => 195.,
             Self::Go => 180.,
+            Self::Dart => 200.,
             Self::Native => 280.,
             Self::Markup => 12.,
             Self::Style => 262.,
@@ -144,6 +149,9 @@ mod tests {
             ("Home.vue", FileKind::Vue),
             ("t.py", FileKind::Python),
             ("main.go", FileKind::Go),
+            ("lib/frame_watch.dart", FileKind::Dart),
+            ("pubspec.yaml", FileKind::Config),
+            ("a.kts", FileKind::Native),
             ("a.cpp", FileKind::Native),
             ("index.html", FileKind::Markup),
             ("a.scss", FileKind::Style),
