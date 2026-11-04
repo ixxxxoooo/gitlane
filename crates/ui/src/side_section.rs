@@ -13,13 +13,13 @@ const HEADER_HEIGHT: f32 = 32.;
 impl RepoView {
     /// 一个右栏面板:标题行(点击折叠 / 展开,可带一个操作按钮)+ 展开时占 `flex_1` 的内容区。
     ///
-    /// 参数:`key` 面板标识,同时是折叠状态的键;`head` 标题(图标, 文字);`button` 标题行右侧的按钮;
+    /// 参数:`key` 面板标识,同时是折叠状态的键;`head` 标题(可选图标, 文字);`button` 标题行右侧的按钮;
     /// `body` 内容(自己负责滚动);`collapsible` 为假时面板固定展开、没有折叠箭头(单面板场景)。
     pub(crate) fn side_section(
         &self,
         key: &'static str,
         collapsible: bool,
-        head: (Icon, String),
+        head: (Option<Icon>, String),
         button: Option<impl IntoElement>,
         body: AnyElement,
         cx: &mut Context<Self>,
@@ -50,7 +50,7 @@ impl RepoView {
                         cx.notify();
                     }))
             })
-            .child(icon.xsmall())
+            .children(icon.map(|i| i.xsmall()))
             .child(title)
             .test_support();
         v_flex()

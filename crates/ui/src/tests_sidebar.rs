@@ -159,3 +159,39 @@ async fn staging_area_only_exists_on_working_changes(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(has(cx, "commit") && has(cx, "side-section-unstaged"));
 }
+
+#[gpui::test]
+async fn commit_box_stays_at_the_bottom_when_panels_collapse(cx: &mut TestAppContext) {
+    let dir = fixture();
+    let (handle, root) = open(cx, dir.path());
+    let r = repo(&root, cx);
+    cx.wait_for(handle.into(), TIMEOUT, move |_, cx| {
+        let m = r.read(cx);
+        m.data.is_some() && m.status.is_some()
+    })
+    .await;
+    let bottoms = |cx: &mut TestAppContext| {
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.render_frame(cx);
+            (
+                window.find("side-panel").bounds().bottom(),
+                window.find("commit-box").bounds().bottom(),
+            )
+        })
+        .unwrap()
+    };
+    let (panel, boxed) = bottoms(cx);
+    assert!(
+        close(panel, boxed),
+        "默认时提交框在最底部:{panel:?} {boxed:?}"
+    );
+
+    // 两个面板都收起:提交框仍然在最底部,而不是跟在标题行后面
+    click(handle, "side-toggle-unstaged", cx);
+    click(handle, "side-toggle-staged", cx);
+    let (panel, boxed) = bottoms(cx);
+    assert!(
+        close(panel, boxed),
+        "收起后提交框仍在最底部:{panel:?} {boxed:?}"
+    );
+}

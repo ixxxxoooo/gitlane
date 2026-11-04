@@ -77,7 +77,7 @@ impl RepoView {
             return self.side_section(
                 "details",
                 false,
-                (icon, "提交详情".into()),
+                (Some(icon), "提交详情".into()),
                 None::<Div>,
                 loading,
                 cx,
@@ -269,7 +269,7 @@ impl RepoView {
         self.side_section(
             "details",
             false,
-            (icon, "提交详情".into()),
+            (Some(icon), "提交详情".into()),
             None::<Div>,
             body,
             cx,
@@ -590,6 +590,11 @@ impl RepoView {
 
         let amend = self.amend;
         let commit_box = v_flex()
+            .id("commit-box")
+            .test_support()
+            // 两个面板都收起时中间有空余高度,提交框仍沉在最底部
+            .mt_auto()
+            .flex_none()
             .p_3()
             .gap_2()
             .border_t_1()
