@@ -1,7 +1,7 @@
 //! 本地设置,存放在 `~/Library/Application Support/Gitlane/settings.json`。
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -247,6 +247,11 @@ impl Settings {
         self.recent_repos.insert(0, path);
         self.recent_repos.truncate(20);
     }
+
+    /// 从最近列表移除;只是忘掉这个入口,不碰磁盘上的仓库。
+    pub fn forget_recent(&mut self, path: &Path) {
+        self.recent_repos.retain(|p| p != path);
+    }
 }
 
 #[cfg(test)]
@@ -362,5 +367,16 @@ mod tests {
         assert_eq!(back.sidebar_collapsed, s.sidebar_collapsed);
         assert_eq!(back.side_collapsed, s.side_collapsed);
         assert!(back.diff_maximized);
+    }
+
+    #[test]
+    fn forgetting_a_recent_repo_only_drops_that_entry() {
+        let mut s = Settings::default();
+        s.remember_recent("/a".into());
+        s.remember_recent("/b".into());
+        s.forget_recent(Path::new("/a"));
+        assert_eq!(s.recent_repos, vec![PathBuf::from("/b")]);
+        s.forget_recent(Path::new("/not-there"));
+        assert_eq!(s.recent_repos, vec![PathBuf::from("/b")]);
     }
 }

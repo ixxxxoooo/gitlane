@@ -504,3 +504,46 @@ async fn auto_fetch_runs_quietly_and_respects_the_interval(cx: &mut TestAppConte
     cx.update(|cx| ws.update(cx, |ws, cx| ws.auto_fetch_tick(cx)));
     cx.update(|cx| assert!(repo.read(cx).busy.is_none()));
 }
+
+#[gpui::test]
+async fn forget_recent_repo_from_the_plus_menu(cx: &mut TestAppContext) {
+    let dir = fixture();
+    let (handle, win) = open(cx, dir.path());
+    let ws = cx.update(|cx| win.read(cx).workspace().clone());
+    cx.update(|cx| {
+        assert_eq!(
+            ws.read(cx).recent_repos().len(),
+            1,
+            "打开的仓库进入最近列表"
+        )
+    });
+
+    // 打开“+”菜单,点第一行的移除按钮
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        window.click("open-repo", cx);
+        window.render_frame(cx);
+    })
+    .unwrap();
+    cx.wait_for(handle.into(), TIMEOUT, |window, _| {
+        window.try_find(("forget-recent", 0usize)).is_some()
+    })
+    .await;
+    cx.run_until_parked();
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        window.render_frame(cx);
+        window.click(("forget-recent", 0usize), cx)
+    })
+    .unwrap();
+    cx.wait_for(handle.into(), TIMEOUT, |window, _| {
+        window.try_find(("forget-recent", 0usize)).is_none()
+    })
+    .await;
+
+    cx.update(|cx| {
+        let ws = ws.read(cx);
+        assert!(ws.recent_repos().is_empty(), "移除后最近列表为空");
+        assert_eq!(ws.repos.len(), 1, "已打开的标签不受影响");
+    });
+}

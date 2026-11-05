@@ -274,6 +274,13 @@ impl Workspace {
         &self.settings.recent_repos
     }
 
+    /// 把仓库从最近列表移除(已打开的标签不受影响)。
+    pub fn forget_recent(&mut self, path: &Path, cx: &mut Context<Self>) {
+        self.settings.forget_recent(path);
+        self.persist(cx);
+        cx.notify();
+    }
+
     fn persist(&mut self, cx: &mut Context<Self>) {
         if self.ephemeral {
             return;

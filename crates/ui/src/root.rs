@@ -488,6 +488,7 @@ impl GitlaneWindow {
         let ws = self.workspace.read(cx);
         let recent = ws.recent_repos().to_vec();
         let open: Vec<PathBuf> = ws.repos.iter().map(|r| r.read(cx).path.clone()).collect();
+        let workspace = self.workspace.clone();
         Button::new("open-repo")
             .xsmall()
             .ghost()
@@ -500,7 +501,9 @@ impl GitlaneWindow {
                 if items.is_empty() {
                     menu = menu.item(PopupMenuItem::label("还没有添加过仓库"));
                 }
-                for path in items {
+                for (i, path) in items.into_iter().enumerate() {
+                    let workspace = workspace.clone();
+                    let forget = path.clone();
                     let name = path.file_name().map_or_else(
                         || path.display().to_string(),
                         |n| n.to_string_lossy().into(),
@@ -513,13 +516,38 @@ impl GitlaneWindow {
                     menu = menu.item(
                         PopupMenuItem::element(move |_, cx| {
                             let muted = cx.theme().muted_foreground;
-                            h_flex().gap_2().child(div().child(name.clone())).child(
-                                div()
-                                    .text_xs()
-                                    .text_color(muted)
-                                    .truncate()
-                                    .child(parent.clone()),
-                            )
+                            let (workspace, forget) = (workspace.clone(), forget.clone());
+                            h_flex()
+                                .gap_2()
+                                .child(div().child(name.clone()))
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        // 菜单宽度随内容撑开,不设上限的话长路径会把 × 挤出菜单
+                                        .max_w(px(240.))
+                                        .text_xs()
+                                        .text_color(muted)
+                                        .truncate()
+                                        .child(parent.clone()),
+                                )
+                                // 只是从列表里忘掉,不删磁盘上的目录。按钮拦截点击,否则整行的“打开”也会触发;
+                                // 移除后发 Cancel 关菜单,下次打开按新列表重建
+                                .child(
+                                    Button::new(("forget-recent", i))
+                                        .xsmall()
+                                        .ghost()
+                                        .icon(IconName::Close)
+                                        .tooltip("从列表移除(不会删除磁盘上的目录)")
+                                        .on_click(move |_, window, cx| {
+                                            cx.stop_propagation();
+                                            workspace
+                                                .update(cx, |ws, cx| ws.forget_recent(&forget, cx));
+                                            window.dispatch_action(
+                                                Box::new(gpui::base::actions::Cancel),
+                                                cx,
+                                            );
+                                        }),
+                                )
                         })
                         .icon(Icon::from(gpui::assets::IconName::FolderGit2))
                         .checked(open.contains(path))
