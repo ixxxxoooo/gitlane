@@ -248,7 +248,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "futures",
  "gitcore",
@@ -1491,7 +1491,7 @@ dependencies = [
 
 [[package]]
 name = "diffview"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "gpui-kit",
  "similar",
@@ -2285,7 +2285,7 @@ dependencies = [
 
 [[package]]
 name = "gitcore"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "git2",
  "graph",
@@ -3350,7 +3350,7 @@ dependencies = [
 
 [[package]]
 name = "graph"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "h2"
@@ -7605,7 +7605,7 @@ dependencies = [
 
 [[package]]
 name = "ui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "app",
  "diffview",
