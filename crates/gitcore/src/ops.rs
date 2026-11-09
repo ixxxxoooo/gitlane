@@ -227,6 +227,31 @@ impl Git {
         self.run(&["stash", "drop", &r]).map(drop)
     }
 
+    /// 第 `index` 条 stash 的提交与列表里显示的描述。
+    pub fn stash_entry(&self, index: usize) -> Result<(String, String)> {
+        let out = self.run(&["stash", "list", "--format=%H%x00%gs"])?;
+        let line = out
+            .lines()
+            .nth(index)
+            .ok_or_else(|| Error::other(format!("没有 stash@{{{index}}}")))?;
+        let (oid, msg) = line
+            .split_once('\0')
+            .ok_or_else(|| Error::other("无法解析 stash 列表"))?;
+        Ok((oid.to_string(), msg.to_string()))
+    }
+
+    /// stash 提交 `commit` 当前在列表里的位置。
+    pub fn stash_index_of(&self, commit: &str) -> Result<Option<usize>> {
+        let out = self.run(&["stash", "list", "--format=%H"])?;
+        Ok(out.lines().position(|l| l.trim() == commit))
+    }
+
+    /// 把一个 stash 提交放回 stash 列表顶部(撤销删除 stash 时使用)。
+    pub fn stash_store(&self, commit: &str, message: &str) -> Result<()> {
+        self.run(&["stash", "store", "-m", message, commit])
+            .map(drop)
+    }
+
     /// 不改动工作区地把当前改动做成一个 stash 提交,返回其 oid;没有改动时返回 None。
     pub fn stash_create(&self) -> Result<Option<String>> {
         let out = self.run(&["stash", "create"])?;

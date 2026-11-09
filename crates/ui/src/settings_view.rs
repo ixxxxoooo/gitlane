@@ -3,7 +3,7 @@
 //! 应用设置改的是 `Workspace::settings`,改完立即保存并同步到已打开的仓库;
 //! Git 页改的是全局 `~/.gitconfig`,经 `Workspace` 在后台用系统 git 写入,本视图不直接调用 git。
 
-use crate::actions::CloseTab;
+use crate::actions::CloseWindow;
 use crate::settings_ai::{AiInputs, ai_page};
 use app::{Settings as AppSettings, TerminalApp, ThemePalette, ThemePreference, Workspace};
 use gitcore::config::{ConfigChange, GlobalConfig, PullMode};
@@ -141,7 +141,7 @@ impl SettingsView {
         }
     }
 
-    fn on_close(&mut self, _: &CloseTab, window: &mut Window, _: &mut Context<Self>) {
+    fn on_close(&mut self, _: &CloseWindow, window: &mut Window, _: &mut Context<Self>) {
         window.remove_window();
     }
 

@@ -70,6 +70,10 @@ pub enum RepoEvent {
     },
     /// 提交成功,UI 清空提交信息框。
     Committed,
+    /// 撤销了一次提交,UI 把这条提交信息放回(空的)提交框。
+    CommitUndone {
+        message: String,
+    },
 }
 
 enum Job {
@@ -568,7 +572,7 @@ impl RepoModel {
                 let task = cx.background_spawn(async move {
                     let repo = Repo::open(&path)?;
                     if is_undo {
-                        undo::undo(&repo, &e)
+                        undo::undo(&repo, &e).map(|()| e)
                     } else {
                         undo::redo(&repo, &e)
                     }
@@ -635,17 +639,18 @@ impl RepoModel {
         &mut self,
         entry: UndoEntry,
         is_undo: bool,
-        result: gitcore::Result<()>,
+        result: gitcore::Result<UndoEntry>,
         cx: &mut Context<Self>,
     ) {
         self.busy = None;
+        let verb = if is_undo { "撤销" } else { "重做" };
         match result {
-            Ok(()) => {
-                let msg = format!(
-                    "已{}:{}",
-                    if is_undo { "撤销" } else { "重做" },
-                    entry.label
-                );
+            // 重做可能更新了记录(hard reset 重新保存的工作区改动),入栈用新的
+            Ok(entry) => {
+                let msg = format!("已{verb}:{}", entry.label);
+                if is_undo && let Some(message) = entry.commit_message.clone() {
+                    cx.emit(RepoEvent::CommitUndone { message });
+                }
                 if is_undo {
                     self.undo.did_undo(entry);
                 } else {
@@ -660,7 +665,7 @@ impl RepoModel {
                     self.undo.restore_redo(entry);
                 }
                 self.queue.clear();
-                self.notice(NoticeKind::Error, format!("撤销失败:{e}"), cx);
+                self.notice(NoticeKind::Error, format!("{verb}失败:{e}"), cx);
             }
         }
         self.refresh(true, cx);

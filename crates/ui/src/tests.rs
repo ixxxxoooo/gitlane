@@ -165,6 +165,60 @@ async fn stage_commit_and_undo_through_the_ui(cx: &mut TestAppContext) {
         assert_eq!(m.status.as_ref().unwrap().staged().count(), 2);
         assert!(m.undo.peek_redo().is_some());
     });
+    // 提交时清空的提交信息随撤销放回输入框
+    cx.update(|cx| {
+        let view = root.read(cx).active_view(cx).unwrap();
+        assert_eq!(view.read(cx).message.read(cx).value(), "界面测试提交");
+    });
+}
+
+#[gpui::test]
+async fn cmd_w_closes_the_window_not_the_tab(cx: &mut TestAppContext) {
+    let dir = fixture();
+    let (handle, root) = open(cx, dir.path());
+    let repo = repo(&root, cx);
+    let r = repo.clone();
+    cx.wait_for(handle.into(), TIMEOUT, move |_, cx| {
+        r.read(cx).data.is_some()
+    })
+    .await;
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.dispatch_action(Box::new(crate::actions::OpenSettings), cx)
+    })
+    .unwrap();
+    cx.run_until_parked();
+    let settings = cx.update(|cx| root.read(cx).settings_window().expect("设置窗口已打开"));
+    let ws = cx.update(|cx| root.read(cx).workspace().clone());
+
+    // 设置窗口里 ⌘W 只关设置窗口
+    cx.simulate_keystrokes(settings.into(), "cmd-w");
+    cx.run_until_parked();
+    assert!(cx.update(|cx| {
+        !cx.windows()
+            .iter()
+            .any(|w| w.window_id() == settings.window_id())
+    }));
+    assert!(cx.update(|cx| {
+        cx.windows()
+            .iter()
+            .any(|w| w.window_id() == handle.window_id())
+    }));
+
+    // 主窗口里 ⌘W 关闭整个窗口(连带设置窗口),标签不受影响
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.dispatch_action(Box::new(crate::actions::OpenSettings), cx)
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(handle.into(), |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    cx.simulate_keystrokes(handle.into(), "cmd-w");
+    cx.run_until_parked();
+    assert!(
+        cx.update(|cx| cx.windows().is_empty()),
+        "主窗口和设置窗口都已关闭"
+    );
+    assert_eq!(cx.update(|cx| ws.read(cx).repos.len()), 1, "关窗口不关标签");
 }
 
 #[gpui::test]
@@ -546,4 +600,42 @@ async fn forget_recent_repo_from_the_plus_menu(cx: &mut TestAppContext) {
         assert!(ws.recent_repos().is_empty(), "移除后最近列表为空");
         assert_eq!(ws.repos.len(), 1, "已打开的标签不受影响");
     });
+}
+
+#[gpui::test]
+async fn aborting_a_merge_asks_first(cx: &mut TestAppContext) {
+    use gpui::component::WindowExt as _;
+    let dir = fixture();
+    let git = Git::new(dir.path());
+    git.run(&["checkout", "-q", "--", "main.rs"]).unwrap();
+    git.run(&["checkout", "-q", "-b", "topic"]).unwrap();
+    std::fs::write(dir.path().join("main.rs"), "topic\n").unwrap();
+    git.run(&["commit", "-qam", "topic"]).unwrap();
+    git.run(&["checkout", "-q", "main"]).unwrap();
+    std::fs::write(dir.path().join("main.rs"), "main\n").unwrap();
+    git.run(&["commit", "-qam", "main"]).unwrap();
+    assert!(git.run(&["merge", "topic"]).is_err(), "制造冲突");
+
+    let (handle, root) = open(cx, dir.path());
+    let repo = repo(&root, cx);
+    let r = repo.clone();
+    cx.wait_for(handle.into(), TIMEOUT, move |_, cx| {
+        r.read(cx)
+            .status
+            .as_ref()
+            .is_some_and(|s| s.state == gitcore::RepoState::Merge)
+    })
+    .await;
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        window.dispatch_action(Box::new(crate::actions::AbortOperation), cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    // 中止会丢掉已解决的冲突且无法撤销:先弹确认框,不直接执行
+    cx.update_window(handle.into(), |_, window, cx| {
+        assert!(window.has_active_dialog(cx));
+    })
+    .unwrap();
+    assert!(dir.path().join(".git/MERGE_HEAD").exists());
 }

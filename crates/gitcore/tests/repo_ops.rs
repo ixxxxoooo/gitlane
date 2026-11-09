@@ -433,6 +433,236 @@ fn noop_entries_are_not_pushed() {
 }
 
 #[test]
+fn undo_keeps_refs_created_after_the_operation() {
+    // 自动 fetch 带回的标签不在撤销记录里,撤销更早的提交不能把它删掉
+    let f = Fixture::new();
+    f.commit_file("a.txt", "1\n", "first");
+    let repo = f.repo();
+    f.write("a.txt", "2\n");
+    f.git.stage_paths(&["a.txt"]).unwrap();
+    let e = undo::record_refs(&repo, "提交", ResetMode::Soft, false, || {
+        f.git.commit("second", &CommitOptions::default())
+    })
+    .unwrap();
+    f.git.run(&["tag", "v-fetched", "HEAD~1"]).unwrap();
+    f.git.create_branch("other", "HEAD", false).unwrap();
+
+    undo::undo(&repo, &e).unwrap();
+    assert!(
+        f.git
+            .run(&["rev-parse", "-q", "--verify", "v-fetched"])
+            .is_ok()
+    );
+    assert!(f.git.run(&["rev-parse", "-q", "--verify", "other"]).is_ok());
+    undo::redo(&repo, &e).unwrap();
+    assert!(
+        f.git
+            .run(&["rev-parse", "-q", "--verify", "v-fetched"])
+            .is_ok()
+    );
+}
+
+#[test]
+fn undo_refuses_when_branch_moved_since() {
+    let f = Fixture::new();
+    f.commit_file("a.txt", "1\n", "first");
+    let repo = f.repo();
+    f.write("a.txt", "2\n");
+    f.git.stage_paths(&["a.txt"]).unwrap();
+    let e = undo::record_refs(&repo, "提交", ResetMode::Soft, false, || {
+        f.git.commit("second", &CommitOptions::default())
+    })
+    .unwrap();
+    // 之后在终端里又提交了一次:撤销会把这个提交从分支上拿掉,必须拒绝
+    f.commit_file("a.txt", "3\n", "third (终端)");
+    let head = repo.head().unwrap().oid();
+    let err = undo::undo(&repo, &e).unwrap_err();
+    assert!(err.to_string().contains("main"), "{err}");
+    assert_eq!(repo.head().unwrap().oid(), head);
+}
+
+#[test]
+fn undo_checkout_refuses_when_head_switched_since() {
+    let f = Fixture::new();
+    f.commit_file("a.txt", "1\n", "first");
+    f.git.create_branch("dev", "HEAD", false).unwrap();
+    f.git.create_branch("third", "HEAD", false).unwrap();
+    let repo = f.repo();
+    let e = undo::record_refs(&repo, "检出 dev", ResetMode::Keep, false, || {
+        f.git.checkout("dev")
+    })
+    .unwrap();
+    f.git.checkout("third").unwrap();
+    assert!(undo::undo(&repo, &e).is_err());
+    assert_eq!(repo.head().unwrap().branch(), Some("third"));
+}
+
+#[test]
+fn undo_delete_branch_restores_upstream() {
+    let f = Fixture::new();
+    f.commit_file("a.txt", "1\n", "first");
+    f.git.create_branch("dev", "HEAD", false).unwrap();
+    f.git
+        .run(&["config", "branch.dev.remote", "origin"])
+        .unwrap();
+    f.git
+        .run(&["config", "branch.dev.merge", "refs/heads/dev"])
+        .unwrap();
+    let repo = f.repo();
+    let e = undo::record_refs(&repo, "删除 dev", ResetMode::Keep, false, || {
+        f.git.delete_branch("dev", true)
+    })
+    .unwrap();
+    assert!(f.git.run(&["config", "branch.dev.remote"]).is_err());
+
+    undo::undo(&repo, &e).unwrap();
+    assert_eq!(
+        f.git.run(&["config", "branch.dev.remote"]).unwrap().trim(),
+        "origin"
+    );
+    assert_eq!(
+        f.git.run(&["config", "branch.dev.merge"]).unwrap().trim(),
+        "refs/heads/dev"
+    );
+
+    undo::redo(&repo, &e).unwrap();
+    assert!(f.git.run(&["rev-parse", "-q", "--verify", "dev"]).is_err());
+    assert!(f.git.run(&["config", "branch.dev.remote"]).is_err());
+}
+
+#[test]
+fn undo_rename_current_branch_restores_name_and_upstream() {
+    let f = Fixture::new();
+    f.commit_file("a.txt", "1\n", "first");
+    f.git
+        .run(&["config", "branch.main.remote", "origin"])
+        .unwrap();
+    f.git
+        .run(&["config", "branch.main.merge", "refs/heads/main"])
+        .unwrap();
+    f.write("a.txt", "未提交\n");
+    let repo = f.repo();
+    let e = undo::record_refs(&repo, "重命名", ResetMode::Keep, false, || {
+        f.git.rename_branch("main", "trunk")
+    })
+    .unwrap();
+    assert_eq!(repo.head().unwrap().branch(), Some("trunk"));
+
+    undo::undo(&repo, &e).unwrap();
+    assert_eq!(repo.head().unwrap().branch(), Some("main"));
+    assert!(
+        f.git
+            .run(&["rev-parse", "-q", "--verify", "trunk"])
+            .is_err()
+    );
+    assert_eq!(
+        f.git.run(&["config", "branch.main.remote"]).unwrap().trim(),
+        "origin"
+    );
+    assert!(f.git.run(&["config", "branch.trunk.remote"]).is_err());
+    assert_eq!(f.read("a.txt"), "未提交\n", "工作区改动保留");
+
+    undo::redo(&repo, &e).unwrap();
+    assert_eq!(repo.head().unwrap().branch(), Some("trunk"));
+    assert_eq!(
+        f.git
+            .run(&["config", "branch.trunk.remote"])
+            .unwrap()
+            .trim(),
+        "origin"
+    );
+}
+
+#[test]
+fn undo_discard_refuses_to_overwrite_later_edits() {
+    let f = Fixture::new();
+    f.commit_file("a.txt", "1\n", "first");
+    f.write("a.txt", "changed\n");
+    let repo = f.repo();
+    let e = undo::record_files(&repo, "丢弃", &["a.txt"], || {
+        f.git.discard_paths(&["a.txt"], &[])
+    })
+    .unwrap();
+    f.write("a.txt", "丢弃后又写的\n");
+    assert!(undo::undo(&repo, &e).is_err());
+    assert_eq!(f.read("a.txt"), "丢弃后又写的\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn undo_discard_keeps_executable_bit_and_raw_bytes() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = Fixture::new();
+    f.write("run.sh", "#!/bin/sh\n");
+    let p = f.path().join("run.sh");
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    let repo = f.repo();
+    // 未跟踪的脚本,内容带 CRLF:撤销后应原样回来
+    fs::write(&p, "#!/bin/sh\r\necho hi\r\n").unwrap();
+    let e = undo::record_files(&repo, "丢弃", &["run.sh"], || {
+        f.git.discard_paths(&[], &["run.sh"])
+    })
+    .unwrap();
+    assert!(!p.exists());
+    undo::undo(&repo, &e).unwrap();
+    assert_eq!(fs::read(&p).unwrap(), b"#!/bin/sh\r\necho hi\r\n");
+    assert_ne!(fs::metadata(&p).unwrap().permissions().mode() & 0o111, 0);
+}
+
+#[test]
+fn hard_reset_undo_refuses_dirty_worktree_and_redo_keeps_new_edits() {
+    let f = Fixture::new();
+    f.commit_file("a.txt", "1\n", "first");
+    f.commit_file("a.txt", "2\n", "second");
+    f.write("a.txt", "dirty\n");
+    let repo = f.repo();
+    let head = repo.head().unwrap().oid();
+    let e = undo::record_refs(&repo, "hard reset", ResetMode::Hard, true, || {
+        f.git.reset("HEAD~1", ResetMode::Hard)
+    })
+    .unwrap();
+
+    // reset 之后又改了文件:撤销要 reset --hard,会把这些改动冲掉,必须拒绝
+    f.write("a.txt", "reset 之后写的\n");
+    let err = undo::undo(&repo, &e).unwrap_err();
+    assert!(err.to_string().contains("未提交"), "{err}");
+    assert_eq!(f.read("a.txt"), "reset 之后写的\n");
+    f.git.run(&["checkout", "--", "a.txt"]).unwrap();
+
+    undo::undo(&repo, &e).unwrap();
+    assert_eq!(repo.head().unwrap().oid(), head);
+    assert_eq!(f.read("a.txt"), "dirty\n");
+
+    // 撤销后继续改,再重做:新改动要被保存下来,下次撤销能拿回
+    f.write("a.txt", "dirtier\n");
+    let e = undo::redo(&repo, &e).unwrap();
+    assert_eq!(f.read("a.txt"), "1\n");
+    undo::undo(&repo, &e).unwrap();
+    assert_eq!(f.read("a.txt"), "dirtier\n");
+}
+
+#[test]
+fn undo_stash_drop() {
+    let f = Fixture::new();
+    f.commit_file("a.txt", "1\n", "first");
+    f.write("a.txt", "wip\n");
+    f.git.stash_push(Some("我的储藏"), true).unwrap();
+    let repo = f.repo();
+    let e = undo::record_stash_drop(&repo, "删除 stash@{0}", 0).unwrap();
+    assert!(f.git.run(&["stash", "list"]).unwrap().trim().is_empty());
+
+    undo::undo(&repo, &e).unwrap();
+    let list = f.git.run(&["stash", "list"]).unwrap();
+    assert!(list.contains("我的储藏"), "{list}");
+    f.git.stash_apply(0, false).unwrap();
+    assert_eq!(f.read("a.txt"), "wip\n");
+    f.git.run(&["checkout", "--", "a.txt"]).unwrap();
+
+    undo::redo(&repo, &e).unwrap();
+    assert!(f.git.run(&["stash", "list"]).unwrap().trim().is_empty());
+}
+
+#[test]
 fn cancel_kills_running_command() {
     let f = Fixture::new();
     let cancel = gitcore::Cancel::new();

@@ -242,6 +242,7 @@ pub fn execute(path: &Path, cmd: &Command, cancel: &Cancel) -> Result<Option<Und
             let head = repo.head()?.oid().map(short_id).unwrap_or_default();
             Ok(Some(UndoEntry {
                 label: format!("{} ({head})", entry.label),
+                commit_message: Some(message.clone()),
                 ..entry
             }))
         }
@@ -284,7 +285,7 @@ pub fn execute(path: &Path, cmd: &Command, cancel: &Cancel) -> Result<Option<Und
         }
         Command::StashPush { message } => git.stash_push(message.as_deref(), true).map(|_| None),
         Command::StashApply { index, pop } => git.stash_apply(*index, *pop).map(|_| None),
-        Command::StashDrop(i) => git.stash_drop(*i).map(|_| None),
+        Command::StashDrop(i) => undo::record_stash_drop(&repo, label.clone(), *i).map(Some),
         Command::Reset { rev, mode } => {
             refs(*mode, *mode == ResetMode::Hard, &|| git.reset(rev, *mode))
         }
@@ -339,6 +340,7 @@ mod tests {
         .unwrap()
         .unwrap();
         assert!(e.label.starts_with("提交:init ("), "{}", e.label);
+        assert_eq!(e.commit_message.as_deref(), Some("init"));
     }
 
     #[test]

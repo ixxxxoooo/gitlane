@@ -46,7 +46,7 @@
 
 | 模块 | 状态 | 说明 |
 |---|---|---|
-| 撤销与重做 | ✅ | commit、checkout、discard、删除分支、reset(含 hard)、新建/重命名分支、cherry-pick、revert、merge、pull、标签 |
+| 撤销与重做 | ✅ | commit(撤销后提交信息放回输入框)、checkout、discard、删除分支(含上游配置)、reset(含 hard)、新建/重命名分支、cherry-pick、revert、merge、pull、标签、删除 stash;只恢复记录本身改过的引用,之后被别处改过则拒绝 |
 | 交互式 rebase | ⬜ | 拖拽重排、squash、fixup、edit、drop,执行前预览。计划:界面生成 todo 列表 → `GIT_SEQUENCE_EDITOR` 写入 → `git rebase -i`,撤销复用引用快照 |
 | 冲突编辑器 | 🚧 | 已有:进行中操作横幅 + 中止按钮、冲突文件标记。未做:三方并排编辑器。可评估 gpui-component 自带的 `diff::conflict` |
 
@@ -83,5 +83,6 @@
 
 - 提交图默认最多加载 100,000 个提交(`Settings::history_limit`),超出部分不显示;
 - rebase 进行中时只能中止,继续需要在命令行执行 `git rebase --continue`;
-- 撤销栈只在内存中,关闭标签或退出应用后清空;
+- 撤销栈只在内存中,关闭标签、关闭窗口(⌘W)或退出应用后清空;
+- ⌘W 关闭窗口而不是标签;窗口关闭后应用仍在运行,点 Dock 图标按上次的标签重新打开;
 - 命令面板的结果列表暂不支持方向键选择,回车执行第一个匹配项。

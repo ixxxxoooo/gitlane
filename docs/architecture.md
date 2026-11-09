@@ -26,7 +26,7 @@
 | `config.rs` | 全局 git 配置(`~/.gitconfig`)的读写:身份、pull 方式、提交签名、默认分支名;读写都走系统 `git config`,测试用 `--file` 指向临时文件 |
 | `cli.rs` | **写路径**:调用系统 `git`,`GIT_TERMINAL_PROMPT=0`、`GIT_EDITOR=true`,支持 stdin 与取消(结束子进程) |
 | `ops.rs` | 写操作的薄封装:stage/unstage/apply/discard/commit/checkout/branch/fetch/pull/push/stash/reset/cherry-pick/revert/tag/merge/abort |
-| `undo.rs` | 引用快照与文件快照、`record_refs` / `record_files`、`undo` / `redo`、`UndoStack` |
+| `undo.rs` | 引用快照(含上游配置)与文件快照、`record_refs` / `record_files` / `record_stash_drop`、`undo` / `redo`、`UndoStack` |
 | `watch.rs` | `notify` 递归监听工作区,区分工作区变化与 `.git` 内变化,忽略 objects/logs/lock |
 
 ### graph
@@ -63,7 +63,7 @@
 
 | 文件 | 区域 |
 |---|---|
-| `root.rs` | 窗口根:仓库标签栏、欢迎页、全局动作(打开/关闭标签、主题、命令面板) |
+| `root.rs` | 窗口根:仓库标签栏、欢迎页、全局动作(打开/关闭标签、⌘W 关闭窗口、主题、命令面板) |
 | `repo_view.rs` | 单仓库视图骨架:工具栏、进行中操作横幅、状态栏、仓库级动作处理 |
 | `sidebar.rs` | 引用树(按前缀分组)、右键菜单 |
 | `graph_view.rs` + `graph_canvas.rs` | 提交图:`uniform_list` 虚拟滚动,每行一个 canvas 画线段与节点 |
@@ -106,9 +106,11 @@ RepoModel 更新 + cx.notify() ←────   结果(带代数,过期丢弃)
 | reset soft / mixed | 引用 | 按原方式 reset 回去 |
 | reset hard | 引用 + `git stash create` | `reset --hard` 回去后重新应用 stash 提交 |
 | cherry-pick / revert / merge / pull | 引用 | `reset --keep`(保留不冲突的本地改动) |
-| 丢弃文件 / 丢弃 hunk 或行 | 文件内容写入对象库 | 写回文件内容 |
+| 丢弃文件 / 丢弃 hunk 或行 | 文件内容(原始字节 + 可执行位)写入对象库 | 写回文件内容 |
+| 删除 stash | stash 提交与描述 | `git stash store` 放回 |
 
-撤销栈每个仓库一个,只在内存中,上限 100 条。
+恢复只动记录前后不同的引用 / HEAD / 上游配置 / 文件,并先核对它们仍处于操作后的状态,
+之后被别处改过就报错不动(细节见 0003)。撤销栈每个仓库一个,只在内存中,上限 100 条。
 
 ## 性能数据
 

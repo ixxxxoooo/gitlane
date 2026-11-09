@@ -198,6 +198,14 @@ impl RepoView {
                 self.amend = false;
                 self.message.update(cx, |m, cx| m.set_value("", window, cx));
             }
+            // 已经开始写新的提交信息就不覆盖
+            RepoEvent::CommitUndone { message } => {
+                if self.message.read(cx).value().trim().is_empty() {
+                    let message = message.clone();
+                    self.message
+                        .update(cx, |m, cx| m.set_value(message, window, cx));
+                }
+            }
         }
     }
 
@@ -420,8 +428,54 @@ impl RepoView {
         self.message.focus_handle(cx).focus(window, cx);
     }
 
-    fn on_abort(&mut self, _: &AbortOperation, _: &mut Window, cx: &mut Context<Self>) {
-        self.run(Command::AbortInProgress, cx);
+    fn on_abort(&mut self, _: &AbortOperation, window: &mut Window, cx: &mut Context<Self>) {
+        self.confirm_abort(window, cx);
+    }
+
+    /// 中止 merge / rebase / cherry-pick / revert 会把已解决的冲突和暂存的结果一起丢掉,
+    /// 而且没法撤销,所以先确认并列出受影响的文件。bisect reset 不丢东西,直接执行。
+    fn confirm_abort(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(status) = self.repo.read(cx).status.clone() else {
+            return;
+        };
+        let what = match status.state {
+            RepoState::Merge => "合并",
+            RepoState::Rebase => "rebase",
+            RepoState::CherryPick => "cherry-pick",
+            RepoState::Revert => "revert",
+            RepoState::Bisect => return self.run(Command::AbortInProgress, cx),
+            RepoState::Clean | RepoState::Other => return,
+        };
+        let files: Vec<&str> = status
+            .entries
+            .iter()
+            .filter(|e| e.staged.is_some() || e.unstaged == Some(gitcore::ChangeKind::Conflicted))
+            .map(|e| e.path.as_str())
+            .collect();
+        let mut lines = vec![format!(
+            "将中止进行中的{what},仓库回到开始前的状态。此操作无法撤销。"
+        )];
+        if !files.is_empty() {
+            lines.push(format!(
+                "以下 {} 个文件里已解决的冲突与暂存的结果会被丢弃:",
+                files.len()
+            ));
+            lines.extend(files.iter().take(20).map(|p| format!("  {p}")));
+            if files.len() > 20 {
+                lines.push(format!("  …以及另外 {} 个文件", files.len() - 20));
+            }
+        }
+        let view = cx.entity().downgrade();
+        crate::dialogs::confirm(
+            window,
+            cx,
+            format!("中止{what}"),
+            lines,
+            "中止",
+            move |_, cx| {
+                let _ = view.update(cx, |v, cx| v.run(Command::AbortInProgress, cx));
+            },
+        );
     }
 
     fn on_toggle_split(&mut self, _: &ToggleSplitDiff, _: &mut Window, cx: &mut Context<Self>) {
@@ -863,7 +917,7 @@ impl RepoView {
                         .danger()
                         .label("中止")
                         .on_click(
-                            cx.listener(|this, _, _, cx| this.run(Command::AbortInProgress, cx)),
+                            cx.listener(|this, _, window, cx| this.confirm_abort(window, cx)),
                         ),
                 ),
         )

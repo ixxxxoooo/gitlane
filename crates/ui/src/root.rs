@@ -246,6 +246,11 @@ impl GitlaneWindow {
         });
     }
 
+    /// ⌘W:关闭主窗口。应用不退出,点 Dock 图标会按上次打开的仓库重新打开(见 `main.rs`)。
+    fn close_window(&mut self, _: &CloseWindow, window: &mut Window, _: &mut Context<Self>) {
+        window.remove_window();
+    }
+
     fn next_tab(&mut self, _: &NextTab, window: &mut Window, cx: &mut Context<Self>) {
         self.cycle_tab(1, window, cx);
     }
@@ -282,7 +287,7 @@ impl GitlaneWindow {
     }
 
     /// 打开设置窗口;已经打开就激活它。
-    fn open_settings(&mut self, _: &OpenSettings, _: &mut Window, cx: &mut Context<Self>) {
+    fn open_settings(&mut self, _: &OpenSettings, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(handle) = self.settings_window
             && handle
                 .update(cx, |_, window, _| window.activate_window())
@@ -313,7 +318,18 @@ impl GitlaneWindow {
         match gpui::open_window(options, cx, move |window, cx| {
             cx.new(|cx| SettingsView::new(ws, window, cx))
         }) {
-            Ok((handle, _)) => self.settings_window = handle.downcast::<Root>(),
+            Ok((handle, _)) => {
+                self.settings_window = handle.downcast::<Root>();
+                // 设置窗口改的是这个主窗口的工作区;主窗口关掉(⌘W 或红绿灯)后它就成了孤儿,
+                // 跟着关掉。监听要在主窗口的视图释放之后仍然有效,所以 detach
+                let main = window.window_handle().window_id();
+                cx.on_window_closed(move |cx, closed| {
+                    if closed == main {
+                        let _ = handle.update(cx, |_, window, _| window.remove_window());
+                    }
+                })
+                .detach();
+            }
             Err(e) => log::warn!("打开设置窗口失败:{e}"),
         }
     }
@@ -663,6 +679,7 @@ impl Render for GitlaneWindow {
             .on_action(cx.listener(Self::copy_text))
             .on_action(cx.listener(Self::scan_directory))
             .on_action(cx.listener(Self::close_tab))
+            .on_action(cx.listener(Self::close_window))
             .on_action(cx.listener(Self::next_tab))
             .on_action(cx.listener(Self::prev_tab))
             .on_action(cx.listener(Self::toggle_theme))
